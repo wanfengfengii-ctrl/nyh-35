@@ -213,3 +213,181 @@ export interface RegionDiff {
   newValue: unknown
   changed: boolean
 }
+
+export enum SpreadLayout {
+  LEFT_RIGHT = 'left_right',
+  RIGHT_LEFT = 'right_left'
+}
+
+export const SpreadLayoutLabel: Record<SpreadLayout, string> = {
+  [SpreadLayout.LEFT_RIGHT]: '左页-右页（西式）',
+  [SpreadLayout.RIGHT_LEFT]: '右页-左页（中式）'
+}
+
+export interface PageOffset {
+  offsetX: number
+  offsetY: number
+  scale: number
+  rotation: number
+}
+
+export interface SpreadPage {
+  pageId: string
+  pageIndex: number
+  image: PageImage
+  scheme: SplitScheme | null
+  offset: PageOffset
+}
+
+export interface SpreadView {
+  id: string
+  name: string
+  layout: SpreadLayout
+  pages: SpreadPage[]
+  pageGap: number
+  createdAt: number
+  updatedAt: number
+}
+
+export enum AlignmentMethod {
+  MANUAL = 'manual',
+  BLOCK_CENTER = 'block_center',
+  COLUMN_LINE = 'column_line',
+  CONTENT_FEATURE = 'content_feature'
+}
+
+export const AlignmentMethodLabel: Record<AlignmentMethod, string> = {
+  [AlignmentMethod.MANUAL]: '手动对齐',
+  [AlignmentMethod.BLOCK_CENTER]: '版心中心对齐',
+  [AlignmentMethod.COLUMN_LINE]: '栏线对齐',
+  [AlignmentMethod.CONTENT_FEATURE]: '内容特征对齐'
+}
+
+export interface AlignmentResult {
+  method: AlignmentMethod
+  success: boolean
+  confidence: number
+  offsetX: number
+  offsetY: number
+  scale: number
+  rotation: number
+  details: string
+}
+
+export enum BreakType {
+  TEXT_BREAK = 'text_break',
+  HEAD_NOTE_BREAK = 'head_note_break',
+  INTERLINE_NOTE_BREAK = 'interline_note_break',
+  IMAGE_BREAK = 'image_break',
+  TITLE_LABEL_BREAK = 'title_label_break',
+  COLUMN_MISALIGNMENT = 'column_misalignment',
+  SEAM_GAP = 'seam_gap'
+}
+
+export const BreakTypeLabel: Record<BreakType, string> = {
+  [BreakType.TEXT_BREAK]: '正文断裂',
+  [BreakType.HEAD_NOTE_BREAK]: '眉批断裂',
+  [BreakType.INTERLINE_NOTE_BREAK]: '夹注断裂',
+  [BreakType.IMAGE_BREAK]: '图像断裂',
+  [BreakType.TITLE_LABEL_BREAK]: '题签断裂',
+  [BreakType.COLUMN_MISALIGNMENT]: '栏线错位',
+  [BreakType.SEAM_GAP]: '页缝异常'
+}
+
+export enum BreakSeverity {
+  LOW = 'low',
+  MEDIUM = 'medium',
+  HIGH = 'high'
+}
+
+export const BreakSeverityLabel: Record<BreakSeverity, string> = {
+  [BreakSeverity.LOW]: '轻微',
+  [BreakSeverity.MEDIUM]: '中等',
+  [BreakSeverity.HIGH]: '严重'
+}
+
+export interface BreakRegion {
+  id: string
+  breakType: BreakType
+  severity: BreakSeverity
+  leftRegionId: string | null
+  rightRegionId: string | null
+  position: RegionPosition
+  description: string
+  detectedAt: number
+  reviewed: boolean
+  reviewer: string | null
+  reviewComment: string
+  resolved: boolean
+  resolvedAt: number | null
+}
+
+export enum ProofreadingStatus {
+  NOT_STARTED = 'not_started',
+  IN_PROGRESS = 'in_progress',
+  REVIEWED = 'reviewed',
+  FINALIZED = 'finalized'
+}
+
+export const ProofreadingStatusLabel: Record<ProofreadingStatus, string> = {
+  [ProofreadingStatus.NOT_STARTED]: '未开始',
+  [ProofreadingStatus.IN_PROGRESS]: '校对中',
+  [ProofreadingStatus.REVIEWED]: '已复核',
+  [ProofreadingStatus.FINALIZED]: '已定稿'
+}
+
+export interface ProofreadingRecord {
+  id: string
+  spreadId: string
+  operator: string
+  status: ProofreadingStatus
+  startTime: number
+  endTime: number | null
+  notes: string
+  reviewedBy: string | null
+  reviewedAt: number | null
+  reviewResult: string
+}
+
+export interface SpreadConsistencyIssue {
+  id: string
+  breakId: string
+  breakType: BreakType
+  severity: BreakSeverity
+  description: string
+  suggestion: string
+  leftPage: number
+  rightPage: number
+}
+
+export interface SpreadConsistencyReport {
+  id: string
+  spreadId: string
+  spreadName: string
+  generatedAt: number
+  generatedBy: string
+  totalIssues: number
+  issuesByType: Record<BreakType, number>
+  issuesBySeverity: Record<BreakSeverity, number>
+  resolvedCount: number
+  unresolvedCount: number
+  alignmentConfidence: number
+  proofreadingStatus: ProofreadingStatus
+  issues: SpreadConsistencyIssue[]
+  summary: string
+}
+
+export interface ColumnLine {
+  x: number
+  y1: number
+  y2: number
+  pageIndex: number
+}
+
+export interface BlockCenter {
+  x: number
+  y: number
+  width: number
+  height: number
+  pageIndex: number
+}

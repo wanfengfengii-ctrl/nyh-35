@@ -102,7 +102,7 @@ async function handleUploadFile(file: File) {
         <NButtonGroup size="small">
           <NTooltip trigger="hover">
             <template #trigger>
-              <NButton :type="!store.isCompareMode ? 'info' : 'default'" @click="store.setCompareMode(false)">
+              <NButton :type="!store.isCompareMode && !store.isSpreadMode ? 'info' : 'default'" @click="store.setSpreadMode(false); store.setCompareMode(false)">
                 <template #icon><NIcon>🎯</NIcon></template>
                 编辑
               </NButton>
@@ -111,12 +111,21 @@ async function handleUploadFile(file: File) {
           </NTooltip>
           <NTooltip trigger="hover">
             <template #trigger>
-              <NButton :type="store.isCompareMode ? 'info' : 'default'" @click="store.setCompareMode(true)">
+              <NButton :type="store.isCompareMode ? 'info' : 'default'" @click="store.setSpreadMode(false); store.setCompareMode(true)">
                 <template #icon><NIcon>⚖️</NIcon></template>
                 对比
               </NButton>
             </template>
             并排对比模式：双画布比较不同方案
+          </NTooltip>
+          <NTooltip trigger="hover">
+            <template #trigger>
+              <NButton :type="store.isSpreadMode ? 'info' : 'default'" @click="store.setCompareMode(false); store.setSpreadMode(true)">
+                <template #icon><NIcon>📖</NIcon></template>
+                跨页
+              </NButton>
+            </template>
+            跨页校对模式：古籍跨页拼接与连续版心校对
           </NTooltip>
         </NButtonGroup>
 

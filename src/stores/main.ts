@@ -17,7 +17,19 @@ import {
   ConflictInfo,
   ReviewLogEntry,
   SchemeVersion,
-  BatchReport
+  BatchReport,
+  SpreadView,
+  SpreadPage,
+  SpreadLayout,
+  PageOffset,
+  AlignmentResult,
+  AlignmentMethod,
+  BreakRegion,
+  BreakType,
+  BreakSeverity,
+  SpreadConsistencyReport,
+  ProofreadingRecord,
+  ProofreadingStatus
 } from '@/types'
 import {
   validateRegionName,
@@ -43,6 +55,21 @@ import {
   getNextVersionNumber,
   generateBatchReport
 } from '@/utils/reviewUtils'
+import {
+  createSpreadView,
+  addPageToSpread,
+  removePageFromSpread,
+  updatePageOffset,
+  reorderPages,
+  autoAlignSpread
+} from '@/utils/spreadAlignment'
+import { detectAllBreaks, reviewBreakRegion } from '@/utils/breakDetection'
+import {
+  createProofreadingRecord,
+  updateProofreadingStatus,
+  updateProofreadingNotes,
+  generateSpreadConsistencyReport
+} from '@/utils/proofreadingReport'
 
 export const useMainStore = defineStore('main', () => {
   const pageImage = ref<PageImage | null>(null)
@@ -67,6 +94,15 @@ export const useMainStore = defineStore('main', () => {
   const showConflicts = ref(true)
   const confidenceThreshold = ref(60)
   const selectedCandidateId = ref<string | null>(null)
+
+  const spreads = ref<SpreadView[]>([])
+  const currentSpreadId = ref<string | null>(null)
+  const isSpreadMode = ref(false)
+  const spreadBreaks = ref<BreakRegion[]>([])
+  const proofreadingRecords = ref<ProofreadingRecord[]>([])
+  const selectedBreakId = ref<string | null>(null)
+  const showBreakHighlights = ref(true)
+  const lastAlignmentResult = ref<AlignmentResult | null>(null)
 
   const currentScheme = computed<SplitScheme | null>(() => {
     if (!currentSchemeId.value) return null
@@ -134,6 +170,28 @@ export const useMainStore = defineStore('main', () => {
       .filter(l => l.schemeId === currentSchemeId.value)
       .sort((a, b) => b.timestamp - a.timestamp)
   )
+
+  const currentSpread = computed<SpreadView | null>(() => {
+    if (!currentSpreadId.value) return null
+    return spreads.value.find((s) => s.id === currentSpreadId.value) || null
+  })
+
+  const unresolvedBreaks = computed(() =>
+    spreadBreaks.value.filter((b) => !b.resolved)
+  )
+
+  const reviewedBreaks = computed(() =>
+    spreadBreaks.value.filter((b) => b.reviewed)
+  )
+
+  const currentSpreadProofreading = computed<ProofreadingRecord | null>(() => {
+    if (!currentSpreadId.value) return null
+    return (
+      proofreadingRecords.value
+        .filter((r) => r.spreadId === currentSpreadId.value)
+        .sort((a, b) => b.startTime - a.startTime)[0] || null
+    )
+  })
 
   function getNextRegionOrder(): number {
     if (regions.value.length === 0) return 1
@@ -695,6 +753,274 @@ export const useMainStore = defineStore('main', () => {
     }
   }
 
+  function createSpread(name: string, layout: SpreadLayout = SpreadLayout.RIGHT_LEFT): SpreadView {
+    const spread = createSpreadView(name, layout)
+    spreads.value.push(spread)
+    currentSpreadId.value = spread.id
+    addLog('创建跨页', `创建跨页视图「${name}」`)
+    return spread
+  }
+
+  function switchSpread(spreadId: string): void {
+    const spread = spreads.value.find((s) => s.id === spreadId)
+    if (spread) {
+      currentSpreadId.value = spreadId
+      spreadBreaks.value = []
+      selectedBreakId.value = null
+    }
+  }
+
+  function deleteSpread(spreadId: string): void {
+    const idx = spreads.value.findIndex((s) => s.id === spreadId)
+    if (idx === -1) return
+    const name = spreads.value[idx].name
+    spreads.value.splice(idx, 1)
+    if (currentSpreadId.value === spreadId) {
+      currentSpreadId.value = spreads.value.length > 0 ? spreads.value[0].id : null
+      spreadBreaks.value = []
+    }
+    proofreadingRecords.value = proofreadingRecords.value.filter(
+      (r) => r.spreadId !== spreadId
+    )
+    addLog('删除跨页', `删除跨页视图「${name}」`)
+  }
+
+  function renameSpread(spreadId: string, newName: string): void {
+    const spread = spreads.value.find((s) => s.id === spreadId)
+    if (spread) {
+      const oldName = spread.name
+      spread.name = newName
+      spread.updatedAt = Date.now()
+      addLog('重命名跨页', `跨页「${oldName}」更名为「${newName}」`)
+    }
+  }
+
+  function setSpreadMode(enabled: boolean): void {
+    isSpreadMode.value = enabled
+    if (!enabled) {
+      selectedBreakId.value = null
+    }
+  }
+
+  function setSpreadLayout(spreadId: string, layout: SpreadLayout): void {
+    const spread = spreads.value.find((s) => s.id === spreadId)
+    if (spread) {
+      spread.layout = layout
+      spread.updatedAt = Date.now()
+    }
+  }
+
+  function setPageGap(spreadId: string, gap: number): void {
+    const spread = spreads.value.find((s) => s.id === spreadId)
+    if (spread) {
+      spread.pageGap = Math.max(0, gap)
+      spread.updatedAt = Date.now()
+    }
+  }
+
+  function addPageImageToSpread(spreadId: string, file: File): Promise<ValidationResult> {
+    return new Promise((resolve) => {
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        const dataUrl = e.target?.result as string
+        const img = new Image()
+        img.onload = () => {
+          const spread = spreads.value.find((s) => s.id === spreadId)
+          if (!spread) {
+            resolve({ valid: false, message: '跨页视图不存在' })
+            return
+          }
+          const pageImage: PageImage = {
+            id: uuidv4(),
+            name: file.name,
+            dataUrl,
+            width: img.width,
+            height: img.height
+          }
+          const updated = addPageToSpread(spread, pageImage, null)
+          const idx = spreads.value.findIndex((s) => s.id === spreadId)
+          if (idx !== -1) {
+            spreads.value[idx] = updated
+          }
+          addLog('添加书页', `向跨页「${spread.name}」添加书页「${file.name}」`)
+          resolve({ valid: true, message: '书页已添加' })
+        }
+        img.onerror = () => resolve({ valid: false, message: '图像加载失败' })
+        img.src = dataUrl
+      }
+      reader.onerror = () => resolve({ valid: false, message: '文件读取失败' })
+      reader.readAsDataURL(file)
+    })
+  }
+
+  function removePageFromSpreadStore(spreadId: string, pageId: string): void {
+    const spread = spreads.value.find((s) => s.id === spreadId)
+    if (!spread) return
+    const page = spread.pages.find((p) => p.pageId === pageId)
+    const updated = removePageFromSpread(spread, pageId)
+    const idx = spreads.value.findIndex((s) => s.id === spreadId)
+    if (idx !== -1) {
+      spreads.value[idx] = updated
+    }
+    if (page) {
+      addLog('移除书页', `从跨页「${spread.name}」移除书页「${page.image.name}」`)
+    }
+  }
+
+  function adjustPageOffset(
+    spreadId: string,
+    pageId: string,
+    offset: Partial<PageOffset>
+  ): void {
+    const spread = spreads.value.find((s) => s.id === spreadId)
+    if (!spread) return
+    const updated = updatePageOffset(spread, pageId, offset)
+    const idx = spreads.value.findIndex((s) => s.id === spreadId)
+    if (idx !== -1) {
+      spreads.value[idx] = updated
+    }
+  }
+
+  function movePageInSpread(
+    spreadId: string,
+    fromIndex: number,
+    toIndex: number
+  ): void {
+    const spread = spreads.value.find((s) => s.id === spreadId)
+    if (!spread) return
+    const updated = reorderPages(spread, fromIndex, toIndex)
+    const idx = spreads.value.findIndex((s) => s.id === spreadId)
+    if (idx !== -1) {
+      spreads.value[idx] = updated
+    }
+  }
+
+  function runAutoAlignment(
+    spreadId: string,
+    method: AlignmentMethod = AlignmentMethod.BLOCK_CENTER
+  ): ValidationResult {
+    const spread = spreads.value.find((s) => s.id === spreadId)
+    if (!spread) return { valid: false, message: '跨页视图不存在' }
+    if (spread.pages.length < 2) {
+      return { valid: false, message: '请先添加至少两页书页' }
+    }
+    const result = autoAlignSpread(spread, method)
+    if (!result.success) {
+      lastAlignmentResult.value = result
+      return { valid: false, message: result.details }
+    }
+    const idx = spreads.value.findIndex((s) => s.id === spreadId)
+    if (idx !== -1) {
+      spreads.value[idx] = result.updatedSpread
+    }
+    lastAlignmentResult.value = result
+    addLog(
+      '自动对齐',
+      `跨页「${spread.name}」使用${AlignmentMethodLabel[method]}，置信度${result.confidence}%：${result.details}`
+    )
+    return { valid: true, message: `对齐完成，置信度 ${result.confidence}%` }
+  }
+
+  function runBreakDetection(spreadId: string): ValidationResult & { count?: number } {
+    const spread = spreads.value.find((s) => s.id === spreadId)
+    if (!spread) return { valid: false, message: '跨页视图不存在' }
+    if (spread.pages.length < 2) {
+      return { valid: false, message: '请先添加至少两页书页' }
+    }
+    const breaks = detectAllBreaks(spread)
+    spreadBreaks.value = breaks
+    addLog('断裂检测', `跨页「${spread.name}」检测到 ${breaks.length} 个潜在问题`)
+    return { valid: true, message: `检测到 ${breaks.length} 个潜在问题`, count: breaks.length }
+  }
+
+  function selectBreak(breakId: string | null): void {
+    selectedBreakId.value = breakId
+  }
+
+  function reviewBreak(
+    breakId: string,
+    comment: string,
+    resolved: boolean
+  ): ValidationResult {
+    const idx = spreadBreaks.value.findIndex((b) => b.id === breakId)
+    if (idx === -1) return { valid: false, message: '断裂区域不存在' }
+    spreadBreaks.value[idx] = reviewBreakRegion(
+      spreadBreaks.value[idx],
+      currentAuthor.value,
+      comment,
+      resolved
+    )
+    addLog(
+      '校对断裂',
+      `${resolved ? '标记已解决' : '标记待处理'}：${spreadBreaks.value[idx].description}${comment ? ' - ' + comment : ''}`
+    )
+    return { valid: true, message: resolved ? '已标记为已解决' : '已标记为待处理' }
+  }
+
+  function clearBreaks(): void {
+    spreadBreaks.value = []
+    selectedBreakId.value = null
+  }
+
+  function setShowBreakHighlights(enabled: boolean): void {
+    showBreakHighlights.value = enabled
+  }
+
+  function startProofreading(spreadId: string): ProofreadingRecord {
+    const record = createProofreadingRecord(spreadId, currentAuthor.value)
+    proofreadingRecords.value.push(record)
+    addLog('开始校对', `开始跨页校对`)
+    return record
+  }
+
+  function finishProofreading(
+    recordId: string,
+    status: ProofreadingStatus,
+    notes: string = ''
+  ): ValidationResult {
+    const idx = proofreadingRecords.value.findIndex((r) => r.id === recordId)
+    if (idx === -1) return { valid: false, message: '校对记录不存在' }
+    let record = proofreadingRecords.value[idx]
+    if (notes) {
+      record = updateProofreadingNotes(record, notes)
+    }
+    record = updateProofreadingStatus(record, status, currentAuthor.value)
+    proofreadingRecords.value[idx] = record
+    addLog(
+      '完成校对',
+      `校对状态更新为${ProofreadingStatusLabel[status]}${notes ? '：' + notes : ''}`
+    )
+    return { valid: true, message: '校对记录已更新' }
+  }
+
+  function generateSpreadReport(spreadId: string): SpreadConsistencyReport | null {
+    const spread = spreads.value.find((s) => s.id === spreadId)
+    if (!spread) return null
+    const report = generateSpreadConsistencyReport(
+      spread,
+      spreadBreaks.value,
+      currentSpreadProofreading.value,
+      currentAuthor.value,
+      lastAlignmentResult.value?.confidence || 0
+    )
+    addLog('生成报告', `生成跨页「${spread.name}」一致性报告（${report.totalIssues} 个问题）`)
+    return report
+  }
+
+  function associateSchemeToPage(
+    spreadId: string,
+    pageId: string,
+    scheme: SplitScheme
+  ): void {
+    const spread = spreads.value.find((s) => s.id === spreadId)
+    if (!spread) return
+    const pageIdx = spread.pages.findIndex((p) => p.pageId === pageId)
+    if (pageIdx !== -1) {
+      spread.pages[pageIdx].scheme = cloneSplitScheme(scheme)
+      spread.updatedAt = Date.now()
+    }
+  }
+
   return {
     pageImage,
     schemes,
@@ -773,6 +1099,39 @@ export const useMainStore = defineStore('main', () => {
     setShowCandidates,
     setShowConflicts,
     setConfidenceThreshold,
-    selectCandidate
+    selectCandidate,
+    spreads,
+    currentSpreadId,
+    isSpreadMode,
+    spreadBreaks,
+    proofreadingRecords,
+    selectedBreakId,
+    showBreakHighlights,
+    lastAlignmentResult,
+    currentSpread,
+    unresolvedBreaks,
+    reviewedBreaks,
+    currentSpreadProofreading,
+    createSpread,
+    switchSpread,
+    deleteSpread,
+    renameSpread,
+    setSpreadMode,
+    setSpreadLayout,
+    setPageGap,
+    addPageImageToSpread,
+    removePageFromSpreadStore,
+    adjustPageOffset,
+    movePageInSpread,
+    runAutoAlignment,
+    runBreakDetection,
+    selectBreak,
+    reviewBreak,
+    clearBreaks,
+    setShowBreakHighlights,
+    startProofreading,
+    finishProofreading,
+    generateSpreadReport,
+    associateSchemeToPage
   }
 })
