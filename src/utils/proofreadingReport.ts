@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid'
 import {
   SpreadView,
   SpreadPage,
+  SpreadLayout,
   BreakRegion,
   BreakType,
   BreakSeverity,
@@ -63,7 +64,11 @@ export function updateProofreadingNotes(
   return { ...record, notes }
 }
 
-export function buildIssueList(breaks: BreakRegion[]): SpreadConsistencyIssue[] {
+export function buildIssueList(
+  breaks: BreakRegion[],
+  leftPageIndex: number = 0,
+  rightPageIndex: number = 1
+): SpreadConsistencyIssue[] {
   return breaks.map((b) => ({
     id: uuidv4(),
     breakId: b.id,
@@ -71,8 +76,8 @@ export function buildIssueList(breaks: BreakRegion[]): SpreadConsistencyIssue[] 
     severity: b.severity,
     description: b.description,
     suggestion: getSuggestionForBreak(b),
-    leftPage: 0,
-    rightPage: 1
+    leftPage: leftPageIndex,
+    rightPage: rightPageIndex
   }))
 }
 
@@ -136,7 +141,19 @@ export function generateSpreadConsistencyReport(
   generatedBy: string,
   alignmentConfidence: number = 0
 ): SpreadConsistencyReport {
-  const issues = buildIssueList(breaks)
+  let leftPageIndex = 0
+  let rightPageIndex = 1
+  if (spread.pages.length >= 2) {
+    if (spread.layout === SpreadLayout.LEFT_RIGHT) {
+      leftPageIndex = spread.pages[0].pageIndex
+      rightPageIndex = spread.pages[1].pageIndex
+    } else {
+      leftPageIndex = spread.pages[1].pageIndex
+      rightPageIndex = spread.pages[0].pageIndex
+    }
+  }
+
+  const issues = buildIssueList(breaks, leftPageIndex, rightPageIndex)
   const resolvedCount = breaks.filter((b) => b.resolved).length
   const unresolvedCount = breaks.length - resolvedCount
   const issuesByType = countIssuesByType(issues)

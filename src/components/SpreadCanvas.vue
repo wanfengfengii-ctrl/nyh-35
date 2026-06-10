@@ -36,49 +36,42 @@ const canvasEl = ref<HTMLCanvasElement | null>(null)
 const containerEl = ref<HTMLDivElement | null>(null)
 let fabricCanvas: fabric.Canvas | null = null
 const pageImageMap = new Map<string, fabric.Image>()
+const pageBaseMap = new Map<string, { baseX: number; baseY: number }>()
 const breakOverlayMap = new Map<string, fabric.Object>()
 const regionRectMap = new Map<string, fabric.Object>()
+let isDragging = false
+let dragPageId: string | null = null
 
 const layoutInfo = computed(() => {
   const pages = props.spread.pages
   if (pages.length === 0) {
-    return { totalWidth: 800, totalHeight: 600, positions: [] as Array<{ page: SpreadPage; x: number; y: number }> }
+    return { totalWidth: 800, totalHeight: 600, positions: [] as Array<{ page: SpreadPage; x: number; y: number; baseX: number; baseY: number }> }
   }
   let maxHeight = 0
   let totalWidth = 0
-  const positions: Array<{ page: SpreadPage; x: number; y: number }> = []
+  const positions: Array<{ page: SpreadPage; x: number; y: number; baseX: number; baseY: number }> = []
 
-  if (props.spread.layout === SpreadLayout.LEFT_RIGHT) {
-    let x = 0
-    for (let i = 0; i < pages.length; i++) {
-      const page = pages[i]
-      const scaledHeight = page.image.height * page.offset.scale
-      const scaledWidth = page.image.width * page.offset.scale
-      positions.push({
-        page,
-        x: x + page.offset.offsetX,
-        y: page.offset.offsetY
-      })
-      maxHeight = Math.max(maxHeight, scaledHeight + page.offset.offsetY)
-      totalWidth = Math.max(totalWidth, x + scaledWidth + page.offset.offsetX)
-      x += scaledWidth + props.spread.pageGap
-    }
-  } else {
-    let x = 0
-    const sorted = [...pages].reverse()
-    for (let i = 0; i < sorted.length; i++) {
-      const page = sorted[i]
-      const scaledHeight = page.image.height * page.offset.scale
-      const scaledWidth = page.image.width * page.offset.scale
-      positions.push({
-        page,
-        x: x + page.offset.offsetX,
-        y: page.offset.offsetY
-      })
-      maxHeight = Math.max(maxHeight, scaledHeight + page.offset.offsetY)
-      totalWidth = Math.max(totalWidth, x + scaledWidth + page.offset.offsetX)
-      x += scaledWidth + props.spread.pageGap
-    }
+  const sortedPages = props.spread.layout === SpreadLayout.LEFT_RIGHT
+    ? [...pages]
+    : [...pages].reverse()
+
+  let baseX = 0
+  for (let i = 0; i < sortedPages.length; i++) {
+    const page = sortedPages[i]
+    const scaledHeight = page.image.height * page.offset.scale
+    const scaledWidth = page.image.width * page.offset.scale
+    const x = baseX + page.offset.offsetX
+    const y = page.offset.offsetY
+    positions.push({
+      page,
+      x,
+      y,
+      baseX,
+      baseY: 0
+    })
+    maxHeight = Math.max(maxHeight, scaledHeight + y)
+    totalWidth = Math.max(totalWidth, x + scaledWidth)
+    baseX += scaledWidth + props.spread.pageGap
   }
 
   return {
@@ -100,15 +93,60 @@ function initCanvas() {
   renderPages()
   renderBreaks()
   renderRegions()
+  setupCanvasEvents()
+}
+
+function setupCanvasEvents() {
+  if (!fabricCanvas || props.readOnly) return
+
+  fabricCanvas.on('mouse:down', (opt) => {
+    const target = opt.target
+    if (target && target.data && (target.data as any).pageId) {
+      isDragging = true
+      dragPageId = (target.data as any).pageId
+    }
+  })
+
+  fabricCanvas.on('mouse:up', () => {
+    if (isDragging && dragPageId) {
+      const img = pageImageMap.get(dragPageId)
+      const base = pageBaseMap.get(dragPageId)
+      if (img && base) {
+        const offsetX = (img.left || 0) - base.baseX
+        const offsetY = (img.top || 0) - base.baseY
+        emit('adjustPageOffset', dragPageId, { offsetX, offsetY })
+      }
+    }
+    isDragging = false
+    dragPageId = null
+    renderRegions()
+    renderBreaks()
+  })
+
+  fabricCanvas.on('object:moving', (opt) => {
+    const target = opt.target
+    if (!target || !target.data || !(target.data as any).pageId) return
+    const pageId = (target.data as any).pageId
+    const base = pageBaseMap.get(pageId)
+    if (!base) return
+
+    const offsetX = (target.left || 0) - base.baseX
+    const offsetY = (target.top || 0) - base.baseY
+    emit('adjustPageOffset', pageId, { offsetX, offsetY })
+  })
 }
 
 function renderPages() {
   if (!fabricCanvas) return
+
   pageImageMap.forEach((img) => fabricCanvas?.remove(img))
   pageImageMap.clear()
+  pageBaseMap.clear()
 
   for (const pos of layoutInfo.value.positions) {
-    const { page, x, y } = pos
+    const { page, x, y, baseX, baseY } = pos
+    pageBaseMap.set(page.pageId, { baseX, baseY })
+
     fabric.Image.fromURL(page.image.dataUrl, (img) => {
       if (!fabricCanvas) return
       img.set({
@@ -120,17 +158,6 @@ function renderPages() {
         scaleY: page.offset.scale,
         data: { pageId: page.pageId }
       })
-      if (!props.readOnly) {
-        img.on('moving', (e) => {
-          const target = e.target
-          if (target) {
-            emit('adjustPageOffset', page.pageId, {
-              offsetX: target.left as number,
-              offsetY: target.top as number
-            })
-          }
-        })
-      }
       pageImageMap.set(page.pageId, img)
       fabricCanvas?.add(img)
       fabricCanvas?.sendToBack(img)
@@ -139,9 +166,10 @@ function renderPages() {
   }
 
   if (layoutInfo.value.positions.length >= 2) {
+    const firstPage = layoutInfo.value.positions[0]
     const seamX =
-      layoutInfo.value.positions[0].x +
-      layoutInfo.value.positions[0].page.image.width * layoutInfo.value.positions[0].page.offset.scale +
+      firstPage.baseX +
+      firstPage.page.image.width * firstPage.page.offset.scale +
       props.spread.pageGap / 2
     const seamLine = new fabric.Line(
       [seamX, 0, seamX, layoutInfo.value.totalHeight],
@@ -231,7 +259,7 @@ function renderBreaks() {
       data: { breakId: b.id }
     })
 
-    group.on('selected', () => {
+    group.on('mousedown', () => {
       emit('selectBreak', b.id)
     })
 
@@ -248,14 +276,46 @@ function handleCanvasClick() {
 }
 
 watch(
-  () => [props.spread, props.showHighlights],
-  () => {
-    if (fabricCanvas) {
+  () => props.spread,
+  (newVal, oldVal) => {
+    if (!fabricCanvas) return
+    if (isDragging) return
+
+    const sizeChanged =
+      !oldVal ||
+      oldVal.pageGap !== newVal.pageGap ||
+      oldVal.pages.length !== newVal.pages.length ||
+      oldVal.layout !== newVal.layout
+
+    if (sizeChanged) {
       fabricCanvas.setWidth(layoutInfo.value.totalWidth)
       fabricCanvas.setHeight(layoutInfo.value.totalHeight)
       renderPages()
       renderRegions()
       renderBreaks()
+    } else {
+      for (const pos of layoutInfo.value.positions) {
+        const img = pageImageMap.get(pos.page.pageId)
+        const base = pageBaseMap.get(pos.page.pageId)
+        if (img && base) {
+          const needsMove =
+            Math.abs(img.left! - pos.x) > 0.5 ||
+            Math.abs(img.top! - pos.y) > 0.5 ||
+            Math.abs(img.scaleX! - pos.page.offset.scale) > 0.001
+          if (needsMove) {
+            img.set({
+              left: pos.x,
+              top: pos.y,
+              scaleX: pos.page.offset.scale,
+              scaleY: pos.page.offset.scale
+            })
+          }
+        }
+        pageBaseMap.set(pos.page.pageId, { baseX: pos.baseX, baseY: pos.baseY })
+      }
+      renderRegions()
+      renderBreaks()
+      fabricCanvas.renderAll()
     }
   },
   { deep: true }
@@ -276,6 +336,13 @@ watch(
   }
 )
 
+watch(
+  () => props.showHighlights,
+  () => {
+    renderBreaks()
+  }
+)
+
 onMounted(() => {
   nextTick(() => initCanvas())
 })
@@ -285,6 +352,10 @@ onUnmounted(() => {
     fabricCanvas.dispose()
     fabricCanvas = null
   }
+  pageImageMap.clear()
+  pageBaseMap.clear()
+  breakOverlayMap.clear()
+  regionRectMap.clear()
 })
 </script>
 

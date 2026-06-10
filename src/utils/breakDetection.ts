@@ -72,7 +72,8 @@ export function detectCategoryBreaks(
   rightPageWidth: number,
   leftOffsetY: number = 0,
   rightOffsetY: number = 0,
-  category: RegionCategory
+  category: RegionCategory,
+  pageGap: number = 20
 ): BreakRegion[] {
   const breaks: BreakRegion[] = []
 
@@ -112,7 +113,6 @@ export function detectCategoryBreaks(
           severity = BreakSeverity.MEDIUM
         }
 
-        const seamX = leftPageWidth
         const minY = Math.min(left.position.y + leftOffsetY, right.position.y + rightOffsetY)
         const maxY = Math.max(
           left.position.y + left.position.height + leftOffsetY,
@@ -120,9 +120,9 @@ export function detectCategoryBreaks(
         )
 
         const breakPos: RegionPosition = {
-          x: seamX - 5,
+          x: leftPageWidth - 5,
           y: minY,
-          width: 10,
+          width: pageGap + 10,
           height: maxY - minY
         }
 
@@ -165,7 +165,9 @@ export function detectColumnMisalignment(
   leftScheme: SplitScheme,
   rightScheme: SplitScheme,
   leftOffsetY: number = 0,
-  rightOffsetY: number = 0
+  rightOffsetY: number = 0,
+  leftPageWidth: number = 0,
+  pageGap: number = 20
 ): BreakRegion[] {
   const breaks: BreakRegion[] = []
 
@@ -199,7 +201,7 @@ export function detectColumnMisalignment(
 
     const minY = Math.min(leftTop, rightTop)
     const maxY = Math.max(leftBottom, rightBottom)
-    const seamX = (leftScheme.pageImageData ? 1 : 1) * 400
+    const seamCenterX = leftPageWidth + pageGap / 2
 
     breaks.push({
       id: uuidv4(),
@@ -208,9 +210,9 @@ export function detectColumnMisalignment(
       leftRegionId: leftRightmost.id,
       rightRegionId: rightLeftmost.id,
       position: {
-        x: seamX - 5,
+        x: seamCenterX - 8,
         y: minY,
-        width: 10,
+        width: 16,
         height: maxY - minY
       },
       description: `栏线错位：顶部差异${topDiff.toFixed(1)}px，底部差异${bottomDiff.toFixed(1)}px`,
@@ -296,7 +298,8 @@ export function detectAllBreaks(
       right.image.width,
       left.offset.offsetY,
       right.offset.offsetY,
-      category
+      category,
+      spread.pageGap
     )
     allBreaks.push(...breaks)
   }
@@ -306,7 +309,9 @@ export function detectAllBreaks(
       left.scheme,
       right.scheme,
       left.offset.offsetY,
-      right.offset.offsetY
+      right.offset.offsetY,
+      left.image.width,
+      spread.pageGap
     )
   )
 
