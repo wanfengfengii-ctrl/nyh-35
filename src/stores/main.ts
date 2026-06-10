@@ -186,22 +186,54 @@ export const useMainStore = defineStore('main', () => {
     return JSON.stringify(scheme, null, 2)
   }
 
-  function importScheme(jsonStr: string): ValidationResult {
+  function importScheme(jsonStr: string): ValidationResult & { schemeId?: string } {
+    let data: unknown
     try {
-      const data = JSON.parse(jsonStr)
-      const validation = validateSplitScheme(data)
-      if (!validation.valid) {
-        return validation
-      }
-      const scheme = data as SplitScheme
-      scheme.id = uuidv4()
-      scheme.createdAt = Date.now()
-      scheme.updatedAt = Date.now()
-      scheme.regions = scheme.regions.map((r) => ({ ...r, id: uuidv4() }))
-      schemes.value.push(scheme)
-      return { valid: true, message: '方案导入成功' }
+      data = JSON.parse(jsonStr)
     } catch {
-      return { valid: false, message: 'JSON解析失败' }
+      return { valid: false, message: 'JSON解析失败，文件内容不是合法JSON' }
+    }
+
+    let validation: ValidationResult
+    try {
+      validation = validateSplitScheme(data)
+    } catch (e) {
+      return { valid: false, message: `校验异常：${(e as Error).message || '未知错误'}` }
+    }
+    if (!validation.valid) {
+      return validation
+    }
+
+    try {
+      const src = data as SplitScheme
+      const now = Date.now()
+      const scheme: SplitScheme = {
+        id: uuidv4(),
+        name: src.name,
+        author: src.author && typeof src.author === 'string' ? src.author : '导入整理员',
+        createdAt: now,
+        updatedAt: now,
+        pageImageData: src.pageImageData,
+        regions: src.regions.map((r) => ({
+          id: uuidv4(),
+          name: r.name,
+          category: r.category,
+          order: r.order,
+          description: r.description || '',
+          status: r.status,
+          hidden: !!r.hidden,
+          position: {
+            x: r.position.x,
+            y: r.position.y,
+            width: r.position.width,
+            height: r.position.height
+          }
+        }))
+      }
+      schemes.value.push(scheme)
+      return { valid: true, message: `已导入方案「${scheme.name}」(${scheme.regions.length}个区域)`, schemeId: scheme.id }
+    } catch (e) {
+      return { valid: false, message: `构建方案失败：${(e as Error).message || '未知错误'}` }
     }
   }
 

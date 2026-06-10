@@ -1,4 +1,4 @@
-import { Region, SplitScheme, RegionCategory, ValidationResult, RegionPosition } from '@/types'
+import { Region, SplitScheme, RegionCategory, RegionStatus, ValidationResult, RegionPosition } from '@/types'
 
 export function isRegionCategory(value: string): value is RegionCategory {
   return Object.values(RegionCategory).includes(value as RegionCategory)
@@ -59,51 +59,87 @@ export function validateSplitScheme(scheme: unknown): ValidationResult {
 
   const s = scheme as Record<string, unknown>
 
-  if (!s.id || typeof s.id !== 'string') {
+  if (typeof s.id !== 'string' || s.id.length === 0) {
     return { valid: false, message: '缺少有效的方案ID' }
   }
-  if (!s.name || typeof s.name !== 'string') {
+  if (typeof s.name !== 'string' || s.name.trim().length === 0) {
     return { valid: false, message: '缺少方案名称' }
   }
-  if (!s.pageImageData || typeof s.pageImageData !== 'string') {
+  if (typeof s.pageImageData !== 'string' || s.pageImageData.length === 0) {
     return { valid: false, message: '缺少页面图像数据' }
+  }
+  if (!s.pageImageData.startsWith('data:image/')) {
+    return { valid: false, message: '页面图像数据格式不合法' }
   }
   if (!Array.isArray(s.regions)) {
     return { valid: false, message: '区域列表格式无效' }
   }
 
+  function isFinitePositive(n: unknown): boolean {
+    return typeof n === 'number' && Number.isFinite(n) && n >= 0
+  }
+  function isFinitePositiveInt(n: unknown): boolean {
+    return typeof n === 'number' && Number.isFinite(n) && Number.isInteger(n) && n >= 1
+  }
+
   for (let i = 0; i < s.regions.length; i++) {
     const region = s.regions[i] as Record<string, unknown>
-    if (!region.id || typeof region.id !== 'string') {
-      return { valid: false, message: `第 ${i + 1} 个区域缺少ID` }
+    const idxLabel = `第 ${i + 1} 个区域`
+
+    if (typeof region.id !== 'string' || region.id.length === 0) {
+      return { valid: false, message: `${idxLabel}缺少ID` }
     }
-    if (!region.name || typeof region.name !== 'string') {
-      return { valid: false, message: `第 ${i + 1} 个区域缺少名称` }
+    if (typeof region.name !== 'string' || region.name.trim().length === 0) {
+      return { valid: false, message: `${idxLabel}缺少名称` }
     }
-    if (!validateRegionCategory(region.category as string).valid) {
-      return {
-        valid: false,
-        message: `区域「${region.name}」类别无效`
-      }
+    if (!validateRegionCategory(String(region.category)).valid) {
+      return { valid: false, message: `区域「${region.name}」类别无效` }
+    }
+    if (!isFinitePositiveInt(region.order)) {
+      return { valid: false, message: `区域「${region.name}」顺序必须为正整数` }
+    }
+    if (typeof region.description !== 'string') {
+      return { valid: false, message: `区域「${region.name}」批注字段格式无效` }
     }
     if (
-      !region.position ||
-      typeof region.position !== 'object' ||
-      typeof (region.position as Record<string, unknown>).x !== 'number' ||
-      typeof (region.position as Record<string, unknown>).y !== 'number' ||
-      typeof (region.position as Record<string, unknown>).width !== 'number' ||
-      typeof (region.position as Record<string, unknown>).height !== 'number'
+      typeof region.status !== 'string' ||
+      !Object.values(RegionStatus).includes(region.status as RegionStatus)
     ) {
-      return { valid: false, message: `区域「${region.name}」位置数据无效` }
+      return { valid: false, message: `区域「${region.name}」整理状态无效` }
+    }
+    if (typeof region.hidden !== 'boolean') {
+      return { valid: false, message: `区域「${region.name}」隐藏字段格式无效` }
+    }
+    const pos = region.position as Record<string, unknown>
+    if (
+      !pos ||
+      typeof pos !== 'object' ||
+      !isFinitePositive(pos.x) ||
+      !isFinitePositive(pos.y) ||
+      !isFinitePositive(pos.width) ||
+      !isFinitePositive(pos.height) ||
+      (pos.width as number) <= 0 ||
+      (pos.height as number) <= 0
+    ) {
+      return { valid: false, message: `区域「${region.name}」位置/尺寸数据无效` }
     }
   }
 
   const names = new Set<string>()
   for (const region of s.regions as Region[]) {
-    if (names.has(region.name)) {
-      return { valid: false, message: `区域名称「${region.name}」重复` }
+    const trimmed = region.name.trim()
+    if (names.has(trimmed)) {
+      return { valid: false, message: `区域名称「${trimmed}」重复` }
     }
-    names.add(region.name)
+    names.add(trimmed)
+  }
+
+  const orders = new Set<number>()
+  for (const region of s.regions as Region[]) {
+    if (orders.has(region.order)) {
+      return { valid: false, message: `区域顺序 ${region.order} 重复（「${region.name}」）` }
+    }
+    orders.add(region.order)
   }
 
   return { valid: true, message: '' }

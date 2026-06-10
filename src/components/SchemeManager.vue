@@ -9,7 +9,6 @@ import {
   NTag,
   NText,
   NInput,
-  NPopconfirm,
   NSelect,
   useMessage,
   useDialog,
@@ -90,7 +89,10 @@ function handleDuplicate() {
   const result = store.duplicateScheme(duplicateSchemeId.value, duplicateName.value.trim())
   if (result) {
     showDuplicateModal.value = false
-    message.success('方案已复制')
+    store.switchScheme(result.id)
+    message.success(`方案已复制并切换到「${result.name}」`)
+  } else {
+    message.error('复制失败：未找到原方案')
   }
 }
 
@@ -133,21 +135,12 @@ function handleImport() {
     const reader = new FileReader()
     reader.onload = (e) => {
       const content = e.target?.result as string
-      const oldCount = store.schemes.length
-      const oldCurrentId = store.currentSchemeId
       const result = store.importScheme(content)
       if (!result.valid) {
-        message.error(`导入失败：${result.message}`)
-        if (store.currentSchemeId !== oldCurrentId) {
-          store.currentSchemeId = oldCurrentId
-        }
-        if (store.schemes.length > oldCount) {
-          store.schemes.splice(oldCount)
-        }
+        message.error(`导入失败：${result.message}。当前书页与方案未受影响。`)
         return
       }
-      store.currentSchemeId = oldCurrentId
-      message.success(result.message)
+      message.success(result.message + '（当前方案保持不变）')
     }
     reader.onerror = () => message.error('文件读取失败')
     reader.readAsText(file)
@@ -225,12 +218,7 @@ function handleImport() {
               <NButton size="tiny" text @click="openRename(s)">改名</NButton>
               <NButton size="tiny" text @click="openDuplicate(s)">复制</NButton>
               <NButton size="tiny" text type="info" @click="handleExport(s)">导出</NButton>
-              <NPopconfirm @positive-click="handleDelete(s)">
-                <template #trigger>
-                  <NButton size="tiny" text type="error">删除</NButton>
-                </template>
-                确定删除「{{ s.name }}」？
-              </NPopconfirm>
+              <NButton size="tiny" text type="error" @click="handleDelete(s)">删除</NButton>
             </NSpace>
           </div>
         </NListItem>
