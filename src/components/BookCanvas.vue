@@ -15,6 +15,7 @@ interface Props {
   conflicts?: ConflictInfo[]
   showCandidates?: boolean
   showConflicts?: boolean
+  selectedCandidateId?: string | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -22,7 +23,8 @@ const props = withDefaults(defineProps<Props>(), {
   candidates: () => [],
   conflicts: () => [],
   showCandidates: true,
-  showConflicts: true
+  showConflicts: true,
+  selectedCandidateId: null
 })
 
 const emit = defineEmits<{
@@ -228,21 +230,22 @@ function addCandidateRect(candidate: CandidateRegion) {
   if (!fabricCanvas) return
   const color = RegionCategoryColor[candidate.category]
   const dash = candidate.confidence >= 80 ? [8, 4] : candidate.confidence >= 60 ? [6, 6] : [4, 8]
+  const isSelected = candidate.id === props.selectedCandidateId
 
   const rect = new fabric.Rect({
     left: candidate.position.x,
     top: candidate.position.y,
     width: candidate.position.width,
     height: candidate.position.height,
-    fill: `${color}11`,
+    fill: isSelected ? `${color}33` : `${color}11`,
     stroke: color,
-    strokeWidth: 2,
+    strokeWidth: isSelected ? 4 : 2,
     selectable: true,
     hasControls: false,
     hasBorders: true,
     data: { candidateId: candidate.id },
     strokeDashArray: dash,
-    opacity: 0.9
+    opacity: isSelected ? 1 : 0.9
   })
 
   const confLabel = new fabric.Text(`${candidate.confidence}%`, {
@@ -256,15 +259,16 @@ function addCandidateRect(candidate: CandidateRegion) {
     evented: false
   })
 
-  const nameLabel = new fabric.Text(`候选:${candidate.templateName}`, {
+  const nameLabel = new fabric.Text(`${isSelected ? '▶ ' : ''}候选:${candidate.templateName}`, {
     left: candidate.position.x + 4,
     top: candidate.position.y + 2,
     fontSize: 11,
     fill: color,
-    backgroundColor: 'rgba(255,255,255,0.75)',
+    backgroundColor: isSelected ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.75)',
     padding: 2,
     selectable: false,
-    evented: false
+    evented: false,
+    fontWeight: isSelected ? 'bold' : 'normal'
   })
 
   const group = new fabric.Group([rect, nameLabel, confLabel], {
@@ -342,6 +346,43 @@ function updateSelectionVisual() {
   fabricCanvas.renderAll()
 }
 
+function updateCandidateSelectionVisual() {
+  if (!fabricCanvas) return
+  for (const [id, obj] of candidateRectMap.entries()) {
+    const isSelected = id === props.selectedCandidateId
+    const items = (obj as fabric.Group).getObjects()
+    const rect = items[0] as fabric.Rect
+    const label = items[1] as fabric.Text
+    const confLabel = items[2] as fabric.Text
+    const candidate = props.candidates.find(c => c.id === id)
+    const color = candidate ? RegionCategoryColor[candidate.category] : '#999'
+
+    rect.set({
+      strokeWidth: isSelected ? 4 : 2,
+      fill: isSelected ? `${color}33` : `${color}11`,
+      opacity: isSelected ? 1 : 0.9
+    })
+    label.set({
+      text: `${isSelected ? '▶ ' : ''}候选:${candidate?.templateName || ''}`,
+      fontWeight: isSelected ? 'bold' : 'normal',
+      backgroundColor: isSelected ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.75)'
+    })
+  }
+  fabricCanvas.renderAll()
+}
+
+function setCanvasCandidateSelectionById() {
+  if (!fabricCanvas || props.readOnly) return
+  if (!props.selectedCandidateId) {
+    return
+  }
+  const obj = candidateRectMap.get(props.selectedCandidateId)
+  if (obj) {
+    fabricCanvas.setActiveObject(obj)
+    fabricCanvas.renderAll()
+  }
+}
+
 function setCanvasSelectionById() {
   if (!fabricCanvas || props.readOnly) return
   if (!props.selectedId) {
@@ -369,6 +410,14 @@ watch(
   () => {
     updateSelectionVisual()
     setCanvasSelectionById()
+  }
+)
+
+watch(
+  () => props.selectedCandidateId,
+  () => {
+    updateCandidateSelectionVisual()
+    setCanvasCandidateSelectionById()
   }
 )
 

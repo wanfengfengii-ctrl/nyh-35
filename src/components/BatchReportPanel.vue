@@ -32,7 +32,7 @@ const message = useMessage()
 const report = ref<BatchReport | null>(null)
 
 watch(
-  () => [store.currentSchemeId, store.regions.length],
+  () => [store.currentSchemeId, store.regions.length, store.conflicts.length, store.currentSchemeOpinions.length, store.candidates.length],
   () => {
     report.value = store.generateReport()
   },
@@ -191,7 +191,7 @@ const reviewerColumns = [
           </NSpace>
         </NSpace>
 
-        <NGrid :cols="2" x-gap="12" y-gap="12">
+        <NGrid :cols="3" x-gap="12" y-gap="12">
           <NGridItem>
             <NStatistic label="区域总数" :value="report.totalRegions" />
           </NGridItem>
@@ -203,10 +203,22 @@ const reviewerColumns = [
             />
           </NGridItem>
           <NGridItem>
+            <NStatistic
+              label="冲突总数"
+              :value="report.conflictCount"
+            />
+          </NGridItem>
+          <NGridItem>
             <NStatistic label="自动采纳数" :value="report.autoAcceptedCount" />
           </NGridItem>
           <NGridItem>
             <NStatistic label="人工复核数" :value="report.manualReviewedCount" />
+          </NGridItem>
+          <NGridItem>
+            <NStatistic
+              label="已解决冲突"
+              :value="report.resolvedConflictCount"
+            />
           </NGridItem>
         </NGrid>
 

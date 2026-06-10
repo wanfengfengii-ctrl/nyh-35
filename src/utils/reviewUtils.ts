@@ -8,7 +8,8 @@ import {
   RegionStatus,
   RegionCategory,
   CandidateRegion,
-  ReviewOpinion
+  ReviewOpinion,
+  ConflictInfo
 } from '@/types'
 import { calculateRegionArea } from './statistics'
 
@@ -97,7 +98,8 @@ export function getNextVersionNumber(versions: SchemeVersion[], schemeId: string
 export function generateBatchReport(
   scheme: SplitScheme,
   candidates: CandidateRegion[],
-  opinions: ReviewOpinion[]
+  opinions: ReviewOpinion[],
+  conflicts: ConflictInfo[] = []
 ): BatchReport {
   const regions = scheme.regions
   const regionsByStatus: Record<RegionStatus, number> = {
@@ -144,6 +146,9 @@ export function generateBatchReport(
     ? candidates.reduce((sum, c) => sum + c.confidence, 0) / candidates.length
     : 0
 
+  const conflictCount = conflicts.length
+  const resolvedConflictCount = conflicts.filter(c => c.resolved).length
+
   return {
     schemeId: scheme.id,
     schemeName: scheme.name,
@@ -153,8 +158,8 @@ export function generateBatchReport(
     regionsByCategory,
     autoAcceptedCount,
     manualReviewedCount,
-    conflictCount: 0,
-    resolvedConflictCount: 0,
+    conflictCount,
+    resolvedConflictCount,
     reviewerContributions,
     averageConfidence: Math.round(avgConfidence * 100) / 100,
     totalArea,
@@ -170,6 +175,8 @@ export function exportReportAsCSV(report: BatchReport): string {
   lines.push(`区域总数,${report.totalRegions}`)
   lines.push(`自动采纳数,${report.autoAcceptedCount}`)
   lines.push(`人工复核数,${report.manualReviewedCount}`)
+  lines.push(`冲突总数,${report.conflictCount}`)
+  lines.push(`已解决冲突数,${report.resolvedConflictCount}`)
   lines.push(`平均置信度,${report.averageConfidence}%`)
   lines.push(`总面积(px²),${Math.round(report.totalArea)}`)
   lines.push('')

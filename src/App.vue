@@ -67,9 +67,10 @@ function handleUpdatePosition(id: string, position: { x: number; y: number; widt
 }
 
 function handleSelectCandidate(candidateId: string) {
-  const candidate = store.candidates.find((c: CandidateRegion) => c.id === candidateId)
+  store.selectCandidate(candidateId)
+  const candidate = store.selectedCandidate
   if (candidate) {
-    window.$message?.info(`候选区域「${candidate.templateName}」(置信度 ${candidate.confidence}%)`)
+    window.$message?.info(`已选中候选：${candidate.templateName}（置信度 ${candidate.confidence}%）`)
   }
 }
 </script>
@@ -123,6 +124,7 @@ export default {
                           :conflicts="store.conflicts"
                           :show-candidates="store.showCandidates"
                           :show-conflicts="store.showConflicts"
+                          :selected-candidate-id="store.selectedCandidateId"
                           @add-region="handleAddRegion"
                           @select-region="handleSelectRegion"
                           @update-region-position="handleUpdatePosition"

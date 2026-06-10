@@ -66,6 +66,7 @@ export const useMainStore = defineStore('main', () => {
   const showCandidates = ref(true)
   const showConflicts = ref(true)
   const confidenceThreshold = ref(60)
+  const selectedCandidateId = ref<string | null>(null)
 
   const currentScheme = computed<SplitScheme | null>(() => {
     if (!currentSchemeId.value) return null
@@ -106,6 +107,11 @@ export const useMainStore = defineStore('main', () => {
   const acceptedCandidates = computed(() =>
     candidates.value.filter(c => c.status === CandidateStatus.ACCEPTED)
   )
+
+  const selectedCandidate = computed(() => {
+    if (!selectedCandidateId.value) return null
+    return candidates.value.find(c => c.id === selectedCandidateId.value) || null
+  })
 
   const unresolvedConflicts = computed(() =>
     conflicts.value.filter(c => !c.resolved)
@@ -659,7 +665,7 @@ export const useMainStore = defineStore('main', () => {
 
   function generateReport(): BatchReport | null {
     if (!currentScheme.value) return null
-    return generateBatchReport(currentScheme.value, candidates.value, currentSchemeOpinions.value)
+    return generateBatchReport(currentScheme.value, candidates.value, currentSchemeOpinions.value, conflicts.value)
   }
 
   function setReviewMode(enabled: boolean): void {
@@ -680,6 +686,13 @@ export const useMainStore = defineStore('main', () => {
 
   function setConfidenceThreshold(value: number): void {
     confidenceThreshold.value = Math.max(0, Math.min(100, value))
+  }
+
+  function selectCandidate(candidateId: string | null): void {
+    selectedCandidateId.value = candidateId
+    if (candidateId) {
+      selectedRegionId.value = null
+    }
   }
 
   return {
@@ -709,6 +722,8 @@ export const useMainStore = defineStore('main', () => {
     showCandidates,
     showConflicts,
     confidenceThreshold,
+    selectedCandidateId,
+    selectedCandidate,
     pendingCandidates,
     acceptedCandidates,
     unresolvedConflicts,
@@ -757,6 +772,7 @@ export const useMainStore = defineStore('main', () => {
     setAutoRecognitionMode,
     setShowCandidates,
     setShowConflicts,
-    setConfidenceThreshold
+    setConfidenceThreshold,
+    selectCandidate
   }
 })

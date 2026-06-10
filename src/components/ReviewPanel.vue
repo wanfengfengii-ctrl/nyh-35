@@ -18,7 +18,11 @@ import {
   NInput,
   NBadge,
   NTooltip,
-  NAvatar
+  NAvatar,
+  NSelect,
+  NInputNumber,
+  NDivider,
+  NSwitch
 } from 'naive-ui'
 import {
   RegionCategoryLabel,
@@ -27,7 +31,9 @@ import {
   ReviewDecisionLabel,
   ReviewOpinion,
   RegionStatus,
-  RegionStatusLabel
+  RegionStatusLabel,
+  RegionCategory,
+  Region
 } from '@/types'
 
 const store = useMainStore()
@@ -37,6 +43,21 @@ const dialog = useDialog()
 const selectedRegionForReview = ref<string | null>(null)
 const reviewDecision = ref<ReviewDecision>(ReviewDecision.APPROVE)
 const reviewComment = ref('')
+const showModifyForm = ref(false)
+
+const proposedName = ref('')
+const proposedCategory = ref<RegionCategory>(RegionCategory.MAIN_TEXT)
+const proposedOrder = ref(1)
+const proposedDescription = ref('')
+const proposedX = ref(0)
+const proposedY = ref(0)
+const proposedWidth = ref(0)
+const proposedHeight = ref(0)
+const modifyName = ref(false)
+const modifyCategory = ref(false)
+const modifyOrder = ref(false)
+const modifyDescription = ref(false)
+const modifyPosition = ref(false)
 
 const decisionTagType: Record<ReviewDecision, 'success' | 'error' | 'warning' | 'default'> = {
   [ReviewDecision.APPROVE]: 'success',
@@ -44,6 +65,13 @@ const decisionTagType: Record<ReviewDecision, 'success' | 'error' | 'warning' | 
   [ReviewDecision.MODIFY]: 'warning',
   [ReviewDecision.PENDING]: 'default'
 }
+
+const categoryOptions = computed(() =>
+  Object.values(RegionCategory).map((c) => ({
+    label: RegionCategoryLabel[c],
+    value: c
+  }))
+)
 
 const regionsNeedingReview = computed(() =>
   store.regions.filter(r =>
@@ -64,6 +92,46 @@ function selectForReview(regionId: string) {
   store.selectRegion(regionId)
   reviewDecision.value = ReviewDecision.APPROVE
   reviewComment.value = ''
+  showModifyForm.value = false
+  resetModifyForm()
+}
+
+function resetModifyForm() {
+  if (!store.selectedRegion) return
+  const r = store.selectedRegion
+  proposedName.value = r.name
+  proposedCategory.value = r.category
+  proposedOrder.value = r.order
+  proposedDescription.value = r.description
+  proposedX.value = Math.round(r.position.x)
+  proposedY.value = Math.round(r.position.y)
+  proposedWidth.value = Math.round(r.position.width)
+  proposedHeight.value = Math.round(r.position.height)
+  modifyName.value = false
+  modifyCategory.value = false
+  modifyOrder.value = false
+  modifyDescription.value = false
+  modifyPosition.value = false
+}
+
+function getProposedChanges(): Partial<Region> | null {
+  if (!modifyName.value && !modifyCategory.value && !modifyOrder.value && !modifyDescription.value && !modifyPosition.value) {
+    return null
+  }
+  const changes: Partial<Region> = {}
+  if (modifyName.value) changes.name = proposedName.value
+  if (modifyCategory.value) changes.category = proposedCategory.value
+  if (modifyOrder.value) changes.order = proposedOrder.value
+  if (modifyDescription.value) changes.description = proposedDescription.value
+  if (modifyPosition.value) {
+    changes.position = {
+      x: proposedX.value,
+      y: proposedY.value,
+      width: proposedWidth.value,
+      height: proposedHeight.value
+    }
+  }
+  return changes
 }
 
 function submitReview() {
@@ -71,14 +139,22 @@ function submitReview() {
     message.warning('请先选择一个区域')
     return
   }
+  const proposedChanges = getProposedChanges()
+  if (reviewDecision.value === ReviewDecision.MODIFY && !proposedChanges && reviewComment.value.trim() === '') {
+    message.warning('请填写修改建议或评论内容')
+    return
+  }
   const result = store.addReviewOpinion(
     selectedRegionForReview.value,
     reviewDecision.value,
-    reviewComment.value.trim()
+    reviewComment.value.trim(),
+    proposedChanges
   )
   if (result.valid) {
     message.success('复核意见已提交')
     reviewComment.value = ''
+    showModifyForm.value = false
+    resetModifyForm()
   } else {
     message.error(result.message)
   }
@@ -173,6 +249,100 @@ function formatTime(ts: number): string {
             style="margin-bottom: 8px"
           />
 
+          <div
+            style="margin-bottom: 8px; padding: 8px; border: 1px dashed #d9d9d9; border-radius: 4px; background: #fafafa"
+          >
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px">
+              <NText depth="3" style="font-size: 12px; font-weight: bold">
+                ✏️ 具体修改建议
+              </NText>
+              <NSwitch
+                v-model:value="showModifyForm"
+                round
+                size="small"
+              />
+            </div>
+
+            <template v-if="showModifyForm">
+              <NDivider style="margin: 6px 0" />
+
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px">
+                <NSwitch v-model:value="modifyName" size="small" />
+                <NText depth="3" style="font-size: 12px">名称:</NText>
+                <NInput
+                  v-model:value="proposedName"
+                  size="small"
+                  :disabled="!modifyName"
+                  style="flex: 1; min-width: 0"
+                />
+              </div>
+
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px">
+                <NSwitch v-model:value="modifyCategory" size="small" />
+                <NText depth="3" style="font-size: 12px">类别:</NText>
+                <NSelect
+                  v-model:value="proposedCategory"
+                  :options="categoryOptions"
+                  size="small"
+                  :disabled="!modifyCategory"
+                  style="flex: 1; min-width: 0"
+                />
+              </div>
+
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px">
+                <NSwitch v-model:value="modifyOrder" size="small" />
+                <NText depth="3" style="font-size: 12px">顺序:</NText>
+                <NInputNumber
+                  v-model:value="proposedOrder"
+                  size="small"
+                  :min="1"
+                  :disabled="!modifyOrder"
+                  style="width: 100px"
+                />
+              </div>
+
+              <div style="display: flex; align-items: flex-start; gap: 8px; margin-bottom: 6px">
+                <NSwitch v-model:value="modifyDescription" size="small" style="margin-top: 4px" />
+                <NText depth="3" style="font-size: 12px; margin-top: 4px">描述:</NText>
+                <NInput
+                  v-model:value="proposedDescription"
+                  type="textarea"
+                  size="small"
+                  :rows="2"
+                  :disabled="!modifyDescription"
+                  style="flex: 1; min-width: 0"
+                />
+              </div>
+
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px">
+                <NSwitch v-model:value="modifyPosition" size="small" />
+                <NText depth="3" style="font-size: 12px">位置尺寸:</NText>
+              </div>
+              <div v-if="modifyPosition" style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding-left: 24px; margin-bottom: 6px">
+                <div style="display: flex; align-items: center; gap: 4px">
+                  <NText depth="3" style="font-size: 11px">X:</NText>
+                  <NInputNumber v-model:value="proposedX" size="small" style="width: 100%" />
+                </div>
+                <div style="display: flex; align-items: center; gap: 4px">
+                  <NText depth="3" style="font-size: 11px">Y:</NText>
+                  <NInputNumber v-model:value="proposedY" size="small" style="width: 100%" />
+                </div>
+                <div style="display: flex; align-items: center; gap: 4px">
+                  <NText depth="3" style="font-size: 11px">宽:</NText>
+                  <NInputNumber v-model:value="proposedWidth" size="small" style="width: 100%" />
+                </div>
+                <div style="display: flex; align-items: center; gap: 4px">
+                  <NText depth="3" style="font-size: 11px">高:</NText>
+                  <NInputNumber v-model:value="proposedHeight" size="small" style="width: 100%" />
+                </div>
+              </div>
+
+              <NText depth="3" style="font-size: 11px; font-style: italic">
+                打开开关的字段才会作为修改建议提交
+              </NText>
+            </template>
+          </div>
+
           <NSpace>
             <NButton
               size="small"
@@ -217,15 +387,41 @@ function formatTime(ts: number): string {
                   {{ op.comment }}
                 </NText>
                 <template v-if="op.proposedChanges">
-                  <div style="margin-top: 4px">
-                    <NButton
-                      quaternary
-                      size="tiny"
-                      type="info"
-                      @click="handleApplyOpinion(op)"
-                    >
-                      应用修改建议
-                    </NButton>
+                  <div
+                    style="margin-top: 6px; padding: 6px; background: #fff7e6; border: 1px dashed #ffd591; border-radius: 4px"
+                  >
+                    <NText depth="3" style="font-size: 11px; font-weight: bold; display: block; margin-bottom: 4px">
+                      📝 修改建议：
+                    </NText>
+                    <div style="font-size: 11px; line-height: 1.6">
+                      <template v-if="op.proposedChanges.name">
+                        <div>• 名称 → {{ op.proposedChanges.name }}</div>
+                      </template>
+                      <template v-if="op.proposedChanges.category">
+                        <div>• 类别 → {{ RegionCategoryLabel[op.proposedChanges.category as RegionCategory] }}</div>
+                      </template>
+                      <template v-if="op.proposedChanges.order !== undefined">
+                        <div>• 顺序 → {{ op.proposedChanges.order }}</div>
+                      </template>
+                      <template v-if="op.proposedChanges.description">
+                        <div>• 描述 → {{ op.proposedChanges.description }}</div>
+                      </template>
+                      <template v-if="op.proposedChanges.position">
+                        <div>
+                          • 位置尺寸 → ({{ Math.round(op.proposedChanges.position.x) }}, {{ Math.round(op.proposedChanges.position.y) }})
+                          {{ Math.round(op.proposedChanges.position.width) }}×{{ Math.round(op.proposedChanges.position.height) }}
+                        </div>
+                      </template>
+                    </div>
+                    <div style="margin-top: 6px">
+                      <NButton
+                        size="tiny"
+                        type="warning"
+                        @click="handleApplyOpinion(op)"
+                      >
+                        应用此修改建议
+                      </NButton>
+                    </div>
                   </div>
                 </template>
               </div>
