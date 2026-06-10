@@ -11,7 +11,13 @@ import RegionEditor from '@/components/RegionEditor.vue'
 import RegionList from '@/components/RegionList.vue'
 import SchemeManager from '@/components/SchemeManager.vue'
 import StatsPanel from '@/components/StatsPanel.vue'
-import type { Region } from '@/types'
+import AutoRecognitionPanel from '@/components/AutoRecognitionPanel.vue'
+import ReviewPanel from '@/components/ReviewPanel.vue'
+import ConflictPanel from '@/components/ConflictPanel.vue'
+import VersionPanel from '@/components/VersionPanel.vue'
+import LogPanel from '@/components/LogPanel.vue'
+import BatchReportPanel from '@/components/BatchReportPanel.vue'
+import type { Region, CandidateRegion } from '@/types'
 
 const store = useMainStore()
 declare global {
@@ -23,7 +29,7 @@ declare global {
 
 const canvasKey = ref(0)
 const compareCanvasKey = ref(0)
-const activeTab = ref<'list' | 'scheme' | 'stats'>('list')
+const activeTab = ref<'list' | 'auto' | 'review' | 'conflict' | 'version' | 'log' | 'scheme' | 'stats' | 'report'>('list')
 
 watch(
   () => store.currentSchemeId,
@@ -57,6 +63,13 @@ function handleUpdatePosition(id: string, position: { x: number; y: number; widt
   const result = store.updateRegion(id, { position })
   if (!result.valid) {
     window.$message?.warning(result.message)
+  }
+}
+
+function handleSelectCandidate(candidateId: string) {
+  const candidate = store.candidates.find((c: CandidateRegion) => c.id === candidateId)
+  if (candidate) {
+    window.$message?.info(`候选区域「${candidate.templateName}」(置信度 ${candidate.confidence}%)`)
   }
 }
 </script>
@@ -106,9 +119,14 @@ export default {
                           :image-data-url="store.pageImage!.dataUrl"
                           :image-width="store.pageImage!.width"
                           :image-height="store.pageImage!.height"
+                          :candidates="store.candidates"
+                          :conflicts="store.conflicts"
+                          :show-candidates="store.showCandidates"
+                          :show-conflicts="store.showConflicts"
                           @add-region="handleAddRegion"
                           @select-region="handleSelectRegion"
                           @update-region-position="handleUpdatePosition"
+                          @select-candidate="handleSelectCandidate"
                         />
                       </div>
                     </NCard>
@@ -211,7 +229,7 @@ export default {
                 <div style="height: 100%; display: flex; flex-direction: column; overflow: hidden">
                   <div style="padding: 4px 8px; border-bottom: 1px solid #eee; background: #fafafa">
                     <NTabs v-model:value="activeTab" size="small" type="line">
-                      <NTabPane name="list" tab="📋 区域与属性">
+                      <NTabPane name="list" tab="📋 区域">
                         <div style="padding: 8px 0">
                           <NSpace vertical style="overflow: auto; max-height: calc(100vh - 180px)">
                             <RegionEditor />
@@ -219,14 +237,54 @@ export default {
                           </NSpace>
                         </div>
                       </NTabPane>
-                      <NTabPane name="scheme" tab="📁 方案管理">
+                      <NTabPane name="auto" tab="🤖 识别">
+                        <div style="padding: 8px 0">
+                          <NSpace vertical style="overflow: auto; max-height: calc(100vh - 180px)">
+                            <AutoRecognitionPanel />
+                          </NSpace>
+                        </div>
+                      </NTabPane>
+                      <NTabPane name="review" tab="👥 复核">
+                        <div style="padding: 8px 0">
+                          <NSpace vertical style="overflow: auto; max-height: calc(100vh - 180px)">
+                            <ReviewPanel />
+                          </NSpace>
+                        </div>
+                      </NTabPane>
+                      <NTabPane name="conflict" tab="⚠️ 冲突">
+                        <div style="padding: 8px 0">
+                          <NSpace vertical style="overflow: auto; max-height: calc(100vh - 180px)">
+                            <ConflictPanel />
+                          </NSpace>
+                        </div>
+                      </NTabPane>
+                      <NTabPane name="version" tab="📚 版本">
+                        <div style="padding: 8px 0">
+                          <NSpace vertical style="overflow: auto; max-height: calc(100vh - 180px)">
+                            <VersionPanel />
+                          </NSpace>
+                        </div>
+                      </NTabPane>
+                      <NTabPane name="log" tab="📋 日志">
+                        <div style="padding: 8px 0">
+                          <NSpace vertical style="overflow: auto; max-height: calc(100vh - 180px)">
+                            <LogPanel />
+                          </NSpace>
+                        </div>
+                      </NTabPane>
+                      <NTabPane name="scheme" tab="📁 方案">
                         <div style="padding: 8px 0">
                           <SchemeManager />
                         </div>
                       </NTabPane>
-                      <NTabPane name="stats" tab="📊 统计分析">
+                      <NTabPane name="stats" tab="📊 统计">
                         <div style="padding: 8px 0">
                           <StatsPanel />
+                        </div>
+                      </NTabPane>
+                      <NTabPane name="report" tab="📑 报表">
+                        <div style="padding: 8px 0">
+                          <BatchReportPanel />
                         </div>
                       </NTabPane>
                     </NTabs>
@@ -250,8 +308,35 @@ export default {
                   <NTag size="small" type="default" bordered round v-if="hasRegions">
                     已按顺序排序 · 顺序范围 1 ~ {{ Math.max(...store.regions.map(r => r.order)) }}
                   </NTag>
-                  <NTag size="small" type="warning" bordered round v-else>
+                  <NTag v-else size="small" type="warning" bordered round>
                     暂无区域
+                  </NTag>
+                  <NTag
+                    v-if="store.pendingCandidates.length > 0"
+                    size="small"
+                    type="info"
+                    bordered
+                    round
+                  >
+                    🤖 待处理候选: {{ store.pendingCandidates.length }}
+                  </NTag>
+                  <NTag
+                    v-if="store.unresolvedConflicts.length > 0"
+                    size="small"
+                    type="error"
+                    bordered
+                    round
+                  >
+                    ⚠️ 冲突: {{ store.unresolvedConflicts.length }}
+                  </NTag>
+                  <NTag
+                    v-if="store.currentSchemeVersions.length > 0"
+                    size="small"
+                    type="success"
+                    bordered
+                    round
+                  >
+                    📚 版本: {{ store.currentSchemeVersions.length }}
                   </NTag>
                 </NSpace>
               </NSpace>
