@@ -102,7 +102,7 @@ async function handleUploadFile(file: File) {
         <NButtonGroup size="small">
           <NTooltip trigger="hover">
             <template #trigger>
-              <NButton :type="!store.isCompareMode && !store.isSpreadMode ? 'info' : 'default'" @click="store.setSpreadMode(false); store.setCompareMode(false)">
+              <NButton :type="!store.isCompareMode && !store.isSpreadMode && !store.isBookBatchMode ? 'info' : 'default'" @click="store.setSpreadMode(false); store.setCompareMode(false); store.setBookBatchMode(false)">
                 <template #icon><NIcon>🎯</NIcon></template>
                 编辑
               </NButton>
@@ -111,7 +111,7 @@ async function handleUploadFile(file: File) {
           </NTooltip>
           <NTooltip trigger="hover">
             <template #trigger>
-              <NButton :type="store.isCompareMode ? 'info' : 'default'" @click="store.setSpreadMode(false); store.setCompareMode(true)">
+              <NButton :type="store.isCompareMode ? 'info' : 'default'" @click="store.setSpreadMode(false); store.setCompareMode(true); store.setBookBatchMode(false)">
                 <template #icon><NIcon>⚖️</NIcon></template>
                 对比
               </NButton>
@@ -120,12 +120,21 @@ async function handleUploadFile(file: File) {
           </NTooltip>
           <NTooltip trigger="hover">
             <template #trigger>
-              <NButton :type="store.isSpreadMode ? 'info' : 'default'" @click="store.setCompareMode(false); store.setSpreadMode(true)">
+              <NButton :type="store.isSpreadMode ? 'info' : 'default'" @click="store.setCompareMode(false); store.setSpreadMode(true); store.setBookBatchMode(false)">
                 <template #icon><NIcon>📖</NIcon></template>
                 跨页
               </NButton>
             </template>
             跨页校对模式：古籍跨页拼接与连续版心校对
+          </NTooltip>
+          <NTooltip trigger="hover">
+            <template #trigger>
+              <NButton :type="store.isBookBatchMode ? 'info' : 'default'" @click="store.setCompareMode(false); store.setSpreadMode(false); store.setBookBatchMode(true)">
+                <template #icon><NIcon>📚</NIcon></template>
+                整册
+              </NButton>
+            </template>
+            整册批处理模式：按册批量生成跨页、问题流转与进度看板
           </NTooltip>
         </NButtonGroup>
 

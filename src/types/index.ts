@@ -391,3 +391,187 @@ export interface BlockCenter {
   height: number
   pageIndex: number
 }
+
+export enum BookStatus {
+  NOT_STARTED = 'not_started',
+  IN_PROGRESS = 'in_progress',
+  REVIEWED = 'reviewed',
+  FINALIZED = 'finalized'
+}
+
+export const BookStatusLabel: Record<BookStatus, string> = {
+  [BookStatus.NOT_STARTED]: '未开始',
+  [BookStatus.IN_PROGRESS]: '进行中',
+  [BookStatus.REVIEWED]: '已复核',
+  [BookStatus.FINALIZED]: '已定稿'
+}
+
+export interface Book {
+  id: string
+  name: string
+  author: string
+  description: string
+  totalPages: number
+  status: BookStatus
+  createdAt: number
+  updatedAt: number
+  startPage: number
+  endPage: number
+  layout: SpreadLayout
+  pageGap: number
+  coverImage?: string
+}
+
+export interface BookSpread {
+  id: string
+  bookId: string
+  spreadId: string
+  leftPageIndex: number
+  rightPageIndex: number
+  sequence: number
+  alignmentConfidence: number
+  breakCount: number
+  resolvedBreakCount: number
+  proofreadingStatus: ProofreadingStatus
+  createdAt: number
+  updatedAt: number
+}
+
+export enum IssueStatus {
+  OPEN = 'open',
+  ASSIGNED = 'assigned',
+  IN_PROGRESS = 'in_progress',
+  PENDING_REVIEW = 'pending_review',
+  RESOLVED = 'resolved',
+  CLOSED = 'closed'
+}
+
+export const IssueStatusLabel: Record<IssueStatus, string> = {
+  [IssueStatus.OPEN]: '待分配',
+  [IssueStatus.ASSIGNED]: '已分配',
+  [IssueStatus.IN_PROGRESS]: '处理中',
+  [IssueStatus.PENDING_REVIEW]: '待复核',
+  [IssueStatus.RESOLVED]: '已解决',
+  [IssueStatus.CLOSED]: '已关闭'
+}
+
+export enum IssuePriority {
+  LOW = 'low',
+  MEDIUM = 'medium',
+  HIGH = 'high',
+  URGENT = 'urgent'
+}
+
+export const IssuePriorityLabel: Record<IssuePriority, string> = {
+  [IssuePriority.LOW]: '低',
+  [IssuePriority.MEDIUM]: '中',
+  [IssuePriority.HIGH]: '高',
+  [IssuePriority.URGENT]: '紧急'
+}
+
+export enum ReviewResult {
+  APPROVED = 'approved',
+  REJECTED = 'rejected',
+  NEEDS_REVISION = 'needs_revision'
+}
+
+export const ReviewResultLabel: Record<ReviewResult, string> = {
+  [ReviewResult.APPROVED]: '通过',
+  [ReviewResult.REJECTED]: '驳回',
+  [ReviewResult.NEEDS_REVISION]: '需修改'
+}
+
+export interface Issue {
+  id: string
+  bookId: string
+  spreadId: string | null
+  breakId: string | null
+  breakType: BreakType | null
+  title: string
+  description: string
+  status: IssueStatus
+  priority: IssuePriority
+  severity: BreakSeverity
+  assignee: string | null
+  reporter: string
+  createdAt: number
+  updatedAt: number
+  dueDate: number | null
+  resolvedAt: number | null
+  closedAt: number | null
+  reviewResult: ReviewResult | null
+  reviewComment: string
+  reviewer: string | null
+  reviewedAt: number | null
+  comments: IssueComment[]
+  tags: string[]
+  leftPageIndex: number | null
+  rightPageIndex: number | null
+}
+
+export interface IssueComment {
+  id: string
+  issueId: string
+  author: string
+  content: string
+  createdAt: number
+  attachments: string[]
+}
+
+export interface BookProgress {
+  bookId: string
+  totalSpreads: number
+  completedSpreads: number
+  inProgressSpreads: number
+  pendingSpreads: number
+  totalIssues: number
+  openIssues: number
+  resolvedIssues: number
+  closedIssues: number
+  highPriorityIssues: number
+  overdueIssues: number
+  alignmentAverageConfidence: number
+  progressPercentage: number
+  estimatedCompletionDate: number | null
+}
+
+export interface BatchProcessingResult {
+  success: boolean
+  total: number
+  processed: number
+  failed: number
+  message: string
+  details: string[]
+}
+
+export interface BookClosureReport {
+  id: string
+  bookId: string
+  bookName: string
+  generatedAt: number
+  generatedBy: string
+  totalPages: number
+  totalSpreads: number
+  totalIssues: number
+  issuesByType: Record<BreakType, number>
+  issuesBySeverity: Record<BreakSeverity, number>
+  issuesByStatus: Record<IssueStatus, number>
+  issuesByPriority: Record<IssuePriority, number>
+  resolvedRate: number
+  averageResolutionTime: number
+  assigneeStats: Record<string, { assigned: number; resolved: number }>
+  progressSummary: string
+  qualityAssessment: string
+  recommendations: string[]
+}
+
+export interface IssueFilter {
+  status?: IssueStatus[]
+  priority?: IssuePriority[]
+  severity?: BreakSeverity[]
+  assignee?: string | null
+  breakType?: BreakType[]
+  keyword?: string
+  dueDateFrom?: number | null
+  dueDateTo?: number | null
+}

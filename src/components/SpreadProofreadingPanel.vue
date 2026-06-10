@@ -16,7 +16,6 @@ import {
   NModal,
   NForm,
   NFormItem,
-  NTextarea,
   NDivider,
   NAlert,
   NBadge,
@@ -601,7 +600,8 @@ function handleAssociateCurrentScheme(pageId: string) {
                 </NDescriptionsItem>
               </NDescriptions>
               <NFormItem label="备注">
-                <NTextarea
+                <NInput
+                  type="textarea"
                   :value="store.currentSpreadProofreading.notes"
                   placeholder="输入校对备注..."
                   @update:value="
@@ -696,7 +696,7 @@ function handleAssociateCurrentScheme(pageId: string) {
         </NDescriptions>
         <NForm style="margin-top: 12px">
           <NFormItem label="处理意见">
-            <NTextarea v-model:value="reviewComment" placeholder="请输入校对意见..." />
+            <NInput v-model:value="reviewComment" type="textarea" placeholder="请输入校对意见..." />
           </NFormItem>
           <NFormItem label="是否解决">
             <NRadioGroup v-model:value="reviewResolved">

@@ -70,6 +70,34 @@ import {
   updateProofreadingNotes,
   generateSpreadConsistencyReport
 } from '@/utils/proofreadingReport'
+import {
+  createBook,
+  generateBookSpreads,
+  batchAlignSpreads,
+  batchDetectBreaks,
+  createIssuesFromBreaks,
+  assignIssue,
+  updateIssueStatus,
+  reviewIssue,
+  calculateBookProgress,
+  filterIssues,
+  generateBookClosureReport,
+  inheritAdjacentScheme,
+  exportClosureReportAsText
+} from '@/utils/batchProcessing'
+import {
+  Book,
+  BookSpread,
+  BookStatus,
+  Issue,
+  IssueStatus,
+  IssuePriority,
+  IssueFilter,
+  BookProgress,
+  BookClosureReport,
+  ReviewResult,
+  IssueComment
+} from '@/types'
 
 export const useMainStore = defineStore('main', () => {
   const pageImage = ref<PageImage | null>(null)
@@ -103,6 +131,15 @@ export const useMainStore = defineStore('main', () => {
   const selectedBreakId = ref<string | null>(null)
   const showBreakHighlights = ref(true)
   const lastAlignmentResult = ref<AlignmentResult | null>(null)
+
+  const books = ref<Book[]>([])
+  const currentBookId = ref<string | null>(null)
+  const bookSpreads = ref<BookSpread[]>([])
+  const issues = ref<Issue[]>([])
+  const isBookBatchMode = ref(false)
+  const currentIssueId = ref<string | null>(null)
+  const issueFilter = ref<IssueFilter>({})
+  const bookPageImages = ref<PageImage[]>([])
 
   const currentScheme = computed<SplitScheme | null>(() => {
     if (!currentSchemeId.value) return null
@@ -192,6 +229,47 @@ export const useMainStore = defineStore('main', () => {
         .sort((a, b) => b.startTime - a.startTime)[0] || null
     )
   })
+
+  const currentBook = computed<Book | null>(() => {
+    if (!currentBookId.value) return null
+    return books.value.find((b) => b.id === currentBookId.value) || null
+  })
+
+  const currentBookSpreads = computed<BookSpread[]>(() => {
+    if (!currentBookId.value) return []
+    return bookSpreads.value
+      .filter((bs) => bs.bookId === currentBookId.value)
+      .sort((a, b) => a.sequence - b.sequence)
+  })
+
+  const currentBookIssues = computed<Issue[]>(() => {
+    if (!currentBookId.value) return []
+    return issues.value.filter((i) => i.bookId === currentBookId.value)
+  })
+
+  const filteredIssues = computed<Issue[]>(() => {
+    return filterIssues(currentBookIssues.value, issueFilter.value)
+  })
+
+  const currentBookProgress = computed<BookProgress | null>(() => {
+    if (!currentBook.value) return null
+    return calculateBookProgress(currentBook.value, currentBookSpreads.value, currentBookIssues.value)
+  })
+
+  const currentIssue = computed<Issue | null>(() => {
+    if (!currentIssueId.value) return null
+    return issues.value.find((i) => i.id === currentIssueId.value) || null
+  })
+
+  const openIssuesCount = computed(() =>
+    currentBookIssues.value.filter((i) => i.status === IssueStatus.OPEN).length
+  )
+
+  const highPriorityIssuesCount = computed(() =>
+    currentBookIssues.value.filter(
+      (i) => i.priority === IssuePriority.HIGH || i.priority === IssuePriority.URGENT
+    ).length
+  )
 
   function getNextRegionOrder(): number {
     if (regions.value.length === 0) return 1
@@ -1021,6 +1099,337 @@ export const useMainStore = defineStore('main', () => {
     }
   }
 
+  function addBook(name: string, totalPages: number, description: string = ''): Book {
+    const book = createBook(name, currentAuthor.value, totalPages, 1, undefined, SpreadLayout.RIGHT_LEFT, description)
+    books.value.push(book)
+    currentBookId.value = book.id
+    addLog('创建书籍', `创建整册项目「${name}」，共 ${totalPages} 页`)
+    return book
+  }
+
+  function deleteBook(bookId: string): void {
+    const idx = books.value.findIndex((b) => b.id === bookId)
+    if (idx === -1) return
+    const name = books.value[idx].name
+    books.value.splice(idx, 1)
+    bookSpreads.value = bookSpreads.value.filter((bs) => bs.bookId !== bookId)
+    issues.value = issues.value.filter((i) => i.bookId !== bookId)
+    if (currentBookId.value === bookId) {
+      currentBookId.value = books.value.length > 0 ? books.value[0].id : null
+    }
+    addLog('删除书籍', `删除整册项目「${name}」`)
+  }
+
+  function switchBook(bookId: string): void {
+    const book = books.value.find((b) => b.id === bookId)
+    if (book) {
+      currentBookId.value = bookId
+    }
+  }
+
+  function updateBook(bookId: string, updates: Partial<Book>): void {
+    const book = books.value.find((b) => b.id === bookId)
+    if (!book) return
+    Object.assign(book, updates)
+    book.updatedAt = Date.now()
+  }
+
+  function loadBookPageImages(files: File[]): Promise<void> {
+    return new Promise((resolve) => {
+      const loaded: PageImage[] = []
+      let loadedCount = 0
+
+      files.forEach((file, index) => {
+        const reader = new FileReader()
+        reader.onload = (e) => {
+          const dataUrl = e.target?.result as string
+          const img = new Image()
+          img.onload = () => {
+            loaded[index] = {
+              id: uuidv4(),
+              name: file.name,
+              dataUrl,
+              width: img.width,
+              height: img.height
+            }
+            loadedCount++
+            if (loadedCount === files.length) {
+              bookPageImages.value = loaded.filter(Boolean)
+              resolve()
+            }
+          }
+          img.onerror = () => {
+            loadedCount++
+            if (loadedCount === files.length) {
+              bookPageImages.value = loaded.filter(Boolean)
+              resolve()
+            }
+          }
+          img.src = dataUrl
+        }
+        reader.onerror = () => {
+          loadedCount++
+          if (loadedCount === files.length) {
+            bookPageImages.value = loaded.filter(Boolean)
+            resolve()
+          }
+        }
+        reader.readAsDataURL(file)
+      })
+
+      if (files.length === 0) {
+        resolve()
+      }
+    })
+  }
+
+  function generateBookSpreadsFromImages(): { success: boolean; message: string; count: number } {
+    if (!currentBook.value) {
+      return { success: false, message: '请先选择整册项目', count: 0 }
+    }
+    if (bookPageImages.value.length < 2) {
+      return { success: false, message: '至少需要 2 页书页图像', count: 0 }
+    }
+
+    const schemesMap = new Map<string, SplitScheme>()
+    const { spreads: newSpreads, bookSpreads: newBookSpreads } = generateBookSpreads(
+      currentBook.value,
+      bookPageImages.value,
+      schemesMap
+    )
+
+    for (const s of newSpreads) {
+      spreads.value.push(s)
+    }
+    for (const bs of newBookSpreads) {
+      bookSpreads.value.push(bs)
+    }
+
+    if (currentBook.value) {
+      currentBook.value.status = BookStatus.IN_PROGRESS
+      currentBook.value.totalPages = bookPageImages.value.length
+      currentBook.value.updatedAt = Date.now()
+    }
+
+    addLog(
+      '批量生成跨页',
+      `为整册「${currentBook.value.name}」生成 ${newSpreads.length} 个跨页视图`
+    )
+    return {
+      success: true,
+      message: `成功生成 ${newSpreads.length} 个跨页视图`,
+      count: newSpreads.length
+    }
+  }
+
+  function batchAlignBookSpreads(method: AlignmentMethod): { success: boolean; message: string; processed: number; failed: number } {
+    if (!currentBook.value || currentBookSpreads.value.length === 0) {
+      return { success: false, message: '没有可处理的跨页', processed: 0, failed: 0 }
+    }
+
+    const spreadIds = currentBookSpreads.value.map((bs) => bs.spreadId)
+    const targetSpreads = spreads.value.filter((s) => spreadIds.includes(s.id))
+
+    const { results, summary } = batchAlignSpreads(targetSpreads, method)
+
+    for (const result of results) {
+      const idx = spreads.value.findIndex((s) => s.id === result.updatedSpread.id)
+      if (idx !== -1) {
+        spreads.value[idx] = result.updatedSpread
+      }
+      const bsIdx = bookSpreads.value.findIndex((bs) => bs.spreadId === result.updatedSpread.id)
+      if (bsIdx !== -1) {
+        bookSpreads.value[bsIdx].alignmentConfidence = result.confidence
+        bookSpreads.value[bsIdx].updatedAt = Date.now()
+      }
+    }
+
+    addLog(
+      '批量对齐',
+      `整册「${currentBook.value.name}」批量对齐：${summary.message}`
+    )
+    return {
+      success: summary.success,
+      message: summary.message,
+      processed: summary.processed,
+      failed: summary.failed
+    }
+  }
+
+  function batchDetectBookBreaks(): { success: boolean; message: string; totalIssues: number } {
+    if (!currentBook.value || currentBookSpreads.value.length === 0) {
+      return { success: false, message: '没有可处理的跨页', totalIssues: 0 }
+    }
+
+    const spreadIds = currentBookSpreads.value.map((bs) => bs.spreadId)
+    const targetSpreads = spreads.value.filter((s) => spreadIds.includes(s.id))
+
+    const { breaksMap, summary } = batchDetectBreaks(targetSpreads)
+
+    const newIssues = createIssuesFromBreaks(
+      breaksMap,
+      currentBook.value.id,
+      currentAuthor.value,
+      currentBookSpreads.value
+    )
+
+    for (const issue of newIssues) {
+      issues.value.push(issue)
+    }
+
+    for (const [spreadId, breaks] of breaksMap) {
+      const bsIdx = bookSpreads.value.findIndex((bs) => bs.spreadId === spreadId)
+      if (bsIdx !== -1) {
+        bookSpreads.value[bsIdx].breakCount = breaks.length
+        bookSpreads.value[bsIdx].resolvedBreakCount = breaks.filter((b) => b.resolved).length
+        bookSpreads.value[bsIdx].updatedAt = Date.now()
+      }
+    }
+
+    addLog(
+      '批量检测问题',
+      `整册「${currentBook.value.name}」${summary.message}，转化为 ${newIssues.length} 个工单`
+    )
+    return {
+      success: true,
+      message: `检测完成，生成 ${newIssues.length} 个问题工单`,
+      totalIssues: newIssues.length
+    }
+  }
+
+  function assignIssueToUser(
+    issueId: string,
+    assignee: string,
+    dueDate?: number
+  ): { success: boolean; message: string } {
+    const issue = issues.value.find((i) => i.id === issueId)
+    if (!issue) {
+      return { success: false, message: '问题不存在' }
+    }
+    const idx = issues.value.findIndex((i) => i.id === issueId)
+    issues.value[idx] = assignIssue(issue, assignee, dueDate)
+    addLog('分配问题', `将问题「${issue.title}」分配给 ${assignee}`)
+    return { success: true, message: '分配成功' }
+  }
+
+  function batchAssignIssues(
+    issueIds: string[],
+    assignee: string,
+    dueDate?: number
+  ): { success: boolean; assigned: number; message: string } {
+    let assigned = 0
+    for (const id of issueIds) {
+      const result = assignIssueToUser(id, assignee, dueDate)
+      if (result.success) assigned++
+    }
+    return {
+      success: assigned > 0,
+      assigned,
+      message: `成功分配 ${assigned} 个问题给 ${assignee}`
+    }
+  }
+
+  function updateIssueState(
+    issueId: string,
+    status: IssueStatus
+  ): { success: boolean; message: string } {
+    const issue = issues.value.find((i) => i.id === issueId)
+    if (!issue) {
+      return { success: false, message: '问题不存在' }
+    }
+    const idx = issues.value.findIndex((i) => i.id === issueId)
+    issues.value[idx] = updateIssueStatus(issue, status, currentAuthor.value)
+    addLog('更新问题状态', `问题「${issue.title}」状态更新为${status}`)
+    return { success: true, message: '状态已更新' }
+  }
+
+  function reviewIssueResult(
+    issueId: string,
+    result: ReviewResult,
+    comment: string = ''
+  ): { success: boolean; message: string } {
+    const issue = issues.value.find((i) => i.id === issueId)
+    if (!issue) {
+      return { success: false, message: '问题不存在' }
+    }
+    const idx = issues.value.findIndex((i) => i.id === issueId)
+    issues.value[idx] = reviewIssue(issue, currentAuthor.value, result, comment)
+    addLog('复核问题', `问题「${issue.title}」复核结果：${result}${comment ? ' - ' + comment : ''}`)
+    return { success: true, message: '复核完成' }
+  }
+
+  function addIssueComment(
+    issueId: string,
+    content: string
+  ): { success: boolean; message: string } {
+    const issue = issues.value.find((i) => i.id === issueId)
+    if (!issue) {
+      return { success: false, message: '问题不存在' }
+    }
+    const comment: IssueComment = {
+      id: uuidv4(),
+      issueId,
+      author: currentAuthor.value,
+      content,
+      createdAt: Date.now(),
+      attachments: []
+    }
+    issue.comments.push(comment)
+    issue.updatedAt = Date.now()
+    return { success: true, message: '评论已添加' }
+  }
+
+  function setIssueFilter(filter: IssueFilter): void {
+    issueFilter.value = filter
+  }
+
+  function selectIssue(issueId: string | null): void {
+    currentIssueId.value = issueId
+  }
+
+  function setBookBatchMode(enabled: boolean): void {
+    isBookBatchMode.value = enabled
+  }
+
+  function generateBookReport(): BookClosureReport | null {
+    if (!currentBook.value) return null
+    const report = generateBookClosureReport(
+      currentBook.value,
+      currentBookSpreads.value,
+      currentBookIssues.value,
+      currentAuthor.value
+    )
+    addLog('生成闭环报告', `生成整册「${currentBook.value.name}」闭环报告`)
+    return report
+  }
+
+  function exportBookReport(report: BookClosureReport, format: 'text' | 'json' = 'text'): string {
+    if (format === 'json') {
+      return JSON.stringify(report, null, 2)
+    }
+    return exportClosureReportAsText(report)
+  }
+
+  function updateIssueDueDate(issueId: string, dueDate: number | null): { success: boolean; message: string } {
+    const issue = issues.value.find((i) => i.id === issueId)
+    if (!issue) {
+      return { success: false, message: '问题不存在' }
+    }
+    issue.dueDate = dueDate
+    issue.updatedAt = Date.now()
+    return { success: true, message: '截止时间已更新' }
+  }
+
+  function updateIssuePriority(issueId: string, priority: IssuePriority): { success: boolean; message: string } {
+    const issue = issues.value.find((i) => i.id === issueId)
+    if (!issue) {
+      return { success: false, message: '问题不存在' }
+    }
+    issue.priority = priority
+    issue.updatedAt = Date.now()
+    return { success: true, message: '优先级已更新' }
+  }
+
   return {
     pageImage,
     schemes,
@@ -1132,6 +1541,42 @@ export const useMainStore = defineStore('main', () => {
     startProofreading,
     finishProofreading,
     generateSpreadReport,
-    associateSchemeToPage
+    associateSchemeToPage,
+    books,
+    currentBookId,
+    bookSpreads,
+    issues,
+    isBookBatchMode,
+    currentIssueId,
+    issueFilter,
+    bookPageImages,
+    currentBook,
+    currentBookSpreads,
+    currentBookIssues,
+    filteredIssues,
+    currentBookProgress,
+    currentIssue,
+    openIssuesCount,
+    highPriorityIssuesCount,
+    addBook,
+    deleteBook,
+    switchBook,
+    updateBook,
+    loadBookPageImages,
+    generateBookSpreadsFromImages,
+    batchAlignBookSpreads,
+    batchDetectBookBreaks,
+    assignIssueToUser,
+    batchAssignIssues,
+    updateIssueState,
+    reviewIssueResult,
+    addIssueComment,
+    setIssueFilter,
+    selectIssue,
+    setBookBatchMode,
+    generateBookReport,
+    exportBookReport,
+    updateIssueDueDate,
+    updateIssuePriority
   }
 })

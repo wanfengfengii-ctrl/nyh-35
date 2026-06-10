@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { NMessageProvider, NDialogProvider, NNotificationProvider, NConfigProvider, NLayout, NLayoutSider, NLayoutContent, NLayoutHeader, NLayoutFooter, NSpace, NEmpty, NTag, NTabs, NTabPane, NText } from 'naive-ui'
+import { NMessageProvider, NDialogProvider, NNotificationProvider, NConfigProvider, NLayout, NLayoutSider, NLayoutContent, NLayoutHeader, NLayoutFooter, NSpace, NEmpty, NTag, NTabs, NTabPane, NText, NProgress, NButton } from 'naive-ui'
 import { useMainStore } from '@/stores/main'
 import { NCard } from 'naive-ui'
 import type { DialogApiInjection } from 'naive-ui/es/dialog/src/DialogProvider'
@@ -19,7 +19,10 @@ import LogPanel from '@/components/LogPanel.vue'
 import BatchReportPanel from '@/components/BatchReportPanel.vue'
 import SpreadCanvas from '@/components/SpreadCanvas.vue'
 import SpreadProofreadingPanel from '@/components/SpreadProofreadingPanel.vue'
-import type { Region, CandidateRegion, BreakRegion } from '@/types'
+import BookBatchPanel from '@/components/BookBatchPanel.vue'
+import IssueFlowCenter from '@/components/IssueFlowCenter.vue'
+import BookDashboard from '@/components/BookDashboard.vue'
+import type { Region, CandidateRegion, BreakRegion, Book } from '@/types'
 
 const store = useMainStore()
 declare global {
@@ -32,7 +35,7 @@ declare global {
 const canvasKey = ref(0)
 const compareCanvasKey = ref(0)
 const spreadCanvasKey = ref(0)
-const activeTab = ref<'list' | 'auto' | 'review' | 'conflict' | 'version' | 'log' | 'scheme' | 'stats' | 'report' | 'spread'>('list')
+const activeTab = ref<'list' | 'auto' | 'review' | 'conflict' | 'version' | 'log' | 'scheme' | 'stats' | 'report' | 'spread' | 'batch' | 'issue' | 'dashboard'>('list')
 
 watch(
   () => store.currentSchemeId,
@@ -66,9 +69,22 @@ watch(
   }
 )
 
+watch(
+  () => store.isBookBatchMode,
+  (val) => {
+    if (val) {
+      activeTab.value = 'dashboard'
+    } else if (['batch', 'issue', 'dashboard'].includes(activeTab.value)) {
+      activeTab.value = 'list'
+    }
+  }
+)
+
 const hasImage = computed(() => !!store.pageImage)
 const hasRegions = computed(() => store.regions.length > 0)
 const hasSpread = computed(() => !!store.currentSpread)
+const hasBook = computed(() => !!store.currentBook)
+const hasBookData = computed(() => store.books.length > 0)
 
 function handleAddRegion(position: { x: number; y: number; width: number; height: number }) {
   const result = store.addRegion(position, store.drawingCategory)
@@ -124,7 +140,84 @@ export default {
 
             <NLayout has-sider style="flex: 1; min-height: 0">
               <NLayoutContent style="padding: 12px; background: #f5f5f5; min-height: 0; overflow: hidden">
-                <template v-if="store.isSpreadMode">
+                <template v-if="store.isBookBatchMode">
+                  <template v-if="activeTab === 'batch'">
+                    <NCard :bordered="false" style="height: 100%" size="small">
+                      <template #header>
+                        <NSpace align="center">
+                          <NText strong>
+                            ⚡ 整册批处理
+                          </NText>
+                          <NTag v-if="hasBook" size="small" type="info" round>
+                            {{ store.currentBook?.name }}
+                          </NTag>
+                          <NTag v-if="hasBook" size="small" type="default" bordered round>
+                            {{ store.bookPageImages.length }} 页图像
+                          </NTag>
+                        </NSpace>
+                      </template>
+                      <div style="height: calc(100% - 48px); overflow: auto">
+                        <BookBatchPanel />
+                      </div>
+                    </NCard>
+                  </template>
+                  <template v-else-if="activeTab === 'issue'">
+                    <NCard :bordered="false" style="height: 100%" size="small">
+                      <template #header>
+                        <NSpace align="center">
+                          <NText strong>
+                            🔄 问题流转中心
+                          </NText>
+                          <NTag v-if="hasBook" size="small" type="info" round>
+                            {{ store.currentBook?.name }}
+                          </NTag>
+                          <NTag
+                            v-if="store.currentBookIssues.length > 0"
+                            size="small"
+                            type="warning"
+                            bordered
+                            round
+                          >
+                            共 {{ store.currentBookIssues.length }} 个问题
+                          </NTag>
+                        </NSpace>
+                      </template>
+                      <div style="height: calc(100% - 48px); overflow: auto">
+                        <IssueFlowCenter />
+                      </div>
+                    </NCard>
+                  </template>
+                  <template v-else>
+                    <NCard :bordered="false" style="height: 100%" size="small">
+                      <template #header>
+                        <NSpace align="center">
+                          <NText strong>
+                            📊 整册进度看板
+                          </NText>
+                          <NTag v-if="hasBook" size="small" type="info" round>
+                            {{ store.currentBook?.name }}
+                          </NTag>
+                          <NTag v-if="hasBook" size="small" type="default" bordered round>
+                            共 {{ store.currentBook?.totalPages || 0 }} 页
+                          </NTag>
+                          <NTag
+                            v-if="store.currentBookIssues.length > 0"
+                            size="small"
+                            type="warning"
+                            bordered
+                            round
+                          >
+                            ⚠️ 问题：{{ store.currentBookIssues.length }} 个
+                          </NTag>
+                        </NSpace>
+                      </template>
+                      <div style="height: calc(100% - 48px); overflow: auto">
+                        <BookDashboard />
+                      </div>
+                    </NCard>
+                  </template>
+                </template>
+                <template v-else-if="store.isSpreadMode">
                   <template v-if="hasSpread">
                     <NCard :bordered="false" style="height: 100%" size="small">
                       <template #header>
@@ -303,14 +396,101 @@ export default {
               </NLayoutContent>
 
               <NLayoutSider
-                v-if="store.isSpreadMode || hasImage"
+                v-if="store.isSpreadMode || store.isBookBatchMode || hasImage"
                 width="360"
                 style="border-left: 1px solid #e8e8e8; flex-shrink: 0; min-height: 0; overflow: hidden"
               >
                 <div style="height: 100%; display: flex; flex-direction: column; overflow: hidden">
                   <div style="padding: 4px 8px; border-bottom: 1px solid #eee; background: #fafafa">
                     <NTabs v-model:value="activeTab" size="small" type="line">
-                      <NTabPane name="spread" tab="📖 跨页" v-if="store.isSpreadMode">
+                      <NTabPane name="dashboard" tab="📊 看板" v-if="store.isBookBatchMode">
+                        <div style="padding: 8px 12px">
+                          <NSpace vertical size="medium" style="width: 100%">
+                            <NCard size="small" :bordered="false" style="background: #f9f9f9">
+                              <template #header>
+                                <NText strong style="font-size: 13px">📚 整册项目</NText>
+                              </template>
+                              <NSpace vertical size="small">
+                                <template v-if="hasBook">
+                                  <NText strong>{{ store.currentBook?.name }}</NText>
+                                  <NSpace :wrap="false" size="small">
+                                    <NTag size="small" type="info" round>{{ store.currentBook?.totalPages }} 页</NTag>
+                                    <NTag size="small" type="default" bordered round>{{ store.currentBookSpreads.length }} 跨页</NTag>
+                                  </NSpace>
+                                  <NTag
+                                    v-if="store.currentBookIssues.length > 0"
+                                    size="small"
+                                    type="warning"
+                                    bordered
+                                    round
+                                  >
+                                    ⚠️ {{ store.currentBookIssues.length }} 个问题
+                                  </NTag>
+                                  <NProgress
+                                    v-if="store.currentBookProgress"
+                                    :percentage="store.currentBookProgress.overallProgress"
+                                    :color="store.currentBookProgress.overallProgress >= 80 ? '#18a058' : store.currentBookProgress.overallProgress >= 50 ? '#f0a020' : '#2080f0'"
+                                    size="small"
+                                    :show-indicator="true"
+                                  />
+                                  <NText depth="3" style="font-size: 12px">
+                                    整体进度：{{ store.currentBookProgress?.overallProgress || 0 }}%
+                                  </NText>
+                                </template>
+                                <NEmpty v-else description="暂无整册项目" size="small" />
+                              </NSpace>
+                            </NCard>
+
+                            <NCard size="small" :bordered="false" style="background: #f9f9f9">
+                              <template #header>
+                                <NText strong style="font-size: 13px">⚡ 快捷操作</NText>
+                              </template>
+                              <NSpace vertical size="small">
+                                <NButton size="small" block type="primary" @click="activeTab = 'batch'">
+                                  进入批处理
+                                </NButton>
+                                <NButton size="small" block type="warning" @click="activeTab = 'issue'">
+                                  问题流转中心
+                                </NButton>
+                                <NButton size="small" block @click="activeTab = 'dashboard'">
+                                  进度看板
+                                </NButton>
+                              </NSpace>
+                            </NCard>
+
+                            <NCard size="small" :bordered="false" style="background: #f9f9f9" v-if="hasBook">
+                              <template #header>
+                                <NText strong style="font-size: 13px">📈 问题统计</NText>
+                              </template>
+                              <NSpace vertical size="small">
+                                <NSpace :wrap="false" justify="space-between" style="width: 100%">
+                                  <NText depth="3" style="font-size: 12px">待处理</NText>
+                                  <NTag size="small" type="info" round>{{ store.currentBookProgress?.openIssues || 0 }}</NTag>
+                                </NSpace>
+                                <NSpace :wrap="false" justify="space-between" style="width: 100%">
+                                  <NText depth="3" style="font-size: 12px">已解决</NText>
+                                  <NTag size="small" type="success" round>{{ store.currentBookProgress?.resolvedIssues || 0 }}</NTag>
+                                </NSpace>
+                                <NSpace :wrap="false" justify="space-between" style="width: 100%">
+                                  <NText depth="3" style="font-size: 12px">高优先级</NText>
+                                  <NTag size="small" type="error" round>{{ store.currentBookProgress?.highPriorityIssues || 0 }}</NTag>
+                                </NSpace>
+                              </NSpace>
+                            </NCard>
+                          </NSpace>
+                        </div>
+                      </NTabPane>
+                      <NTabPane name="batch" tab="⚡ 批处理" v-if="store.isBookBatchMode">
+                        <div style="padding: 8px 0">
+                          <BookBatchPanel />
+                        </div>
+                      </NTabPane>
+                      <NTabPane name="issue" tab="🔄 问题" v-if="store.isBookBatchMode">
+                        <div style="padding: 8px 0">
+                          <IssueFlowCenter />
+                        </div>
+                      </NTabPane>
+                      <NTabPane name="spread" tab="📖 跨页" v-if="store.isSpreadMode && !store.isBookBatchMode">
                         <div style="padding: 8px 0">
                           <SpreadProofreadingPanel />
                         </div>
@@ -380,12 +560,18 @@ export default {
             </NLayout>
 
             <NLayoutFooter
-              v-if="(hasImage && store.currentScheme) || (store.isSpreadMode && hasSpread)"
+              v-if="(hasImage && store.currentScheme) || (store.isSpreadMode && hasSpread) || (store.isBookBatchMode && hasBook)"
               style="flex-shrink: 0; padding: 6px 16px; border-top: 1px solid #e8e8e8; background: #fafafa"
             >
               <NSpace align="center" :wrap="false" style="width: 100%; justify-content: space-between">
                 <NSpace align="center">
-                  <template v-if="!store.isSpreadMode">
+                  <template v-if="store.isBookBatchMode">
+                    <NText depth="3" style="font-size: 12px">
+                      📚 整册：<strong>{{ store.currentBook?.name }}</strong> ·
+                      更新于 {{ store.currentBook ? new Date(store.currentBook.updatedAt).toLocaleString('zh-CN') : '' }}
+                    </NText>
+                  </template>
+                  <template v-else-if="!store.isSpreadMode">
                     <NText depth="3" style="font-size: 12px">
                       💾 方案：<strong>{{ store.currentScheme?.name }}</strong> ·
                       更新于 {{ store.currentScheme ? new Date(store.currentScheme.updatedAt).toLocaleString('zh-CN') : '' }}
@@ -399,7 +585,30 @@ export default {
                   </template>
                 </NSpace>
                 <NSpace align="center">
-                  <template v-if="!store.isSpreadMode">
+                  <template v-if="store.isBookBatchMode">
+                    <NTag size="small" type="default" bordered round>
+                      跨页数: {{ store.currentBookSpreads.length }}
+                    </NTag>
+                    <NTag
+                      v-if="store.currentBookIssues.length > 0"
+                      size="small"
+                      type="warning"
+                      bordered
+                      round
+                    >
+                      ⚠️ 问题: {{ store.currentBookProgress?.openIssues || 0 }}/{{ store.currentBookIssues.length }}
+                    </NTag>
+                    <NTag
+                      v-if="store.currentBookProgress"
+                      size="small"
+                      type="info"
+                      bordered
+                      round
+                    >
+                      📊 进度: {{ store.currentBookProgress.overallProgress }}%
+                    </NTag>
+                  </template>
+                  <template v-else-if="!store.isSpreadMode">
                     <NTag size="small" type="default" bordered round v-if="hasRegions">
                       已按顺序排序 · 顺序范围 1 ~ {{ Math.max(...store.regions.map(r => r.order)) }}
                     </NTag>
