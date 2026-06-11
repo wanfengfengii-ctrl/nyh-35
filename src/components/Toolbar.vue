@@ -53,7 +53,7 @@ async function handleUploadFile(file: File) {
 
       <NDivider vertical style="height: 24px" />
 
-      <NUpload :show-file-list="false" accept="image/*" :custom-request="({ file }) => handleUploadFile(file as File)">
+      <NUpload :show-file-list="false" accept="image/*" :custom-request="({ file }) => handleUploadFile((file as unknown) as File)">
         <NButton size="small" type="primary">
           <template #icon><NIcon>🖼</NIcon></template>
           导入书页图像
@@ -89,7 +89,7 @@ async function handleUploadFile(file: File) {
             style="width: 140px"
             @update:value="store.setDrawingCategory"
           >
-            <template #label="{ label, color }">
+            <template #label="{ label, color }: { label: string; color: string }">
               <NTag size="small" round :color="color" text-color="#fff">
                 {{ label }}
               </NTag>

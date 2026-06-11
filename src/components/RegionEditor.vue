@@ -6,8 +6,9 @@ import {
   RegionCategoryLabel,
   RegionStatus,
   RegionStatusLabel,
-  RegionCategoryColor
+  type Region
 } from '@/types'
+import type { TagType } from '@/utils/common'
 import {
   NCard,
   NForm,
@@ -19,14 +20,13 @@ import {
   NButton,
   NText,
   NDivider,
-  NTag,
-  useMessage,
-  useDialog
+  NTag
 } from 'naive-ui'
+import { useNotify, useDialog } from '@/utils/common'
 import { calculateRegionArea } from '@/utils/statistics'
 
 const store = useMainStore()
-const message = useMessage()
+const notify = useNotify()
 const dialog = useDialog()
 
 const region = computed(() => store.selectedRegion)
@@ -66,6 +66,15 @@ const area = computed(() => {
   return calculateRegionArea(region.value)
 })
 
+const categoryTagType: Record<RegionCategory, TagType> = {
+  [RegionCategory.MAIN_TEXT]: 'info',
+  [RegionCategory.HEAD_NOTE]: 'success',
+  [RegionCategory.INTERLINE_NOTE]: 'warning',
+  [RegionCategory.IMAGE]: 'default',
+  [RegionCategory.TITLE_LABEL]: 'error',
+  [RegionCategory.DAMAGED]: 'warning'
+}
+
 const categoryOptions = computed(() =>
   Object.values(RegionCategory).map((c) => ({
     label: RegionCategoryLabel[c],
@@ -81,17 +90,17 @@ const statusOptions = computed(() =>
   }))
 )
 
-function updateField<K extends keyof typeof region.value>(
+function updateField<K extends keyof Omit<Region, 'id' | 'position'>>(
   field: K,
-  value: (typeof region.value)[K]
+  value: Region[K]
 ) {
   if (!region.value) return
   const result = store.updateRegion(region.value.id, { [field]: value })
   if (!result.valid) {
-    message.warning(result.message)
+    notify.warning(result.message)
     return
   }
-  message.success('已更新')
+  notify.success('已更新')
 }
 
 function updatePosition() {
@@ -105,10 +114,10 @@ function updatePosition() {
     }
   })
   if (!result.valid) {
-    message.warning(result.message)
+    notify.warning(result.message)
     return
   }
-  message.success('位置已更新')
+  notify.success('位置已更新')
 }
 
 function handleDelete() {
@@ -117,19 +126,18 @@ function handleDelete() {
   const doDelete = () => {
     const result = store.deleteRegion(region.value!.id)
     if (result.valid) {
-      message.success('区域已删除')
+      notify.success('区域已删除')
     } else {
-      message.error(result.message)
+      notify.error(result.message)
     }
   }
   if (hasDesc) {
-    dialog.warning({
-      title: '二次确认',
-      content: `区域「${region.value.name}」已填写说明，确定要删除吗？此操作不可撤销。`,
-      positiveText: '确认删除',
-      negativeText: '取消',
-      onPositiveClick: doDelete
-    })
+    dialog.confirm(
+      '二次确认',
+      `区域「${region.value.name}」已填写说明，确定要删除吗？此操作不可撤销。`,
+      doDelete,
+      { positiveText: '确认删除', negativeText: '取消', type: 'warning' }
+    )
   } else {
     doDelete()
   }
@@ -140,7 +148,7 @@ function handleDelete() {
   <NCard title="区域属性" size="small" :bordered="false">
     <template v-if="region">
       <div style="margin-bottom: 12px">
-        <NTag :color="RegionCategoryColor[region.category]" bordered round>
+        <NTag :type="categoryTagType[region.category]" bordered round>
           {{ RegionCategoryLabel[region.category] }}
         </NTag>
         <NText depth="3" style="margin-left: 8px; font-size: 12px">

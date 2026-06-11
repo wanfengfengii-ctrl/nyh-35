@@ -11,8 +11,6 @@ import {
   NList,
   NListItem,
   NEmpty,
-  useMessage,
-  useDialog,
   NRadio,
   NRadioGroup,
   NInput,
@@ -35,9 +33,10 @@ import {
   RegionCategory,
   Region
 } from '@/types'
+import { TagType, useNotify, useDialog } from '@/utils/common'
 
 const store = useMainStore()
-const message = useMessage()
+const notify = useNotify()
 const dialog = useDialog()
 
 const selectedRegionForReview = ref<string | null>(null)
@@ -59,11 +58,20 @@ const modifyOrder = ref(false)
 const modifyDescription = ref(false)
 const modifyPosition = ref(false)
 
-const decisionTagType: Record<ReviewDecision, 'success' | 'error' | 'warning' | 'default'> = {
+const decisionTagType: Record<ReviewDecision, TagType> = {
   [ReviewDecision.APPROVE]: 'success',
   [ReviewDecision.REJECT]: 'error',
   [ReviewDecision.MODIFY]: 'warning',
   [ReviewDecision.PENDING]: 'default'
+}
+
+const categoryTagType: Record<RegionCategory, TagType> = {
+  [RegionCategory.MAIN_TEXT]: 'info',
+  [RegionCategory.HEAD_NOTE]: 'success',
+  [RegionCategory.INTERLINE_NOTE]: 'warning',
+  [RegionCategory.IMAGE]: 'default',
+  [RegionCategory.TITLE_LABEL]: 'error',
+  [RegionCategory.DAMAGED]: 'warning'
 }
 
 const categoryOptions = computed(() =>
@@ -136,12 +144,12 @@ function getProposedChanges(): Partial<Region> | null {
 
 function submitReview() {
   if (!selectedRegionForReview.value) {
-    message.warning('请先选择一个区域')
+    notify.warning('请先选择一个区域')
     return
   }
   const proposedChanges = getProposedChanges()
   if (reviewDecision.value === ReviewDecision.MODIFY && !proposedChanges && reviewComment.value.trim() === '') {
-    message.warning('请填写修改建议或评论内容')
+    notify.warning('请填写修改建议或评论内容')
     return
   }
   const result = store.addReviewOpinion(
@@ -150,13 +158,13 @@ function submitReview() {
     reviewComment.value.trim(),
     proposedChanges
   )
-  if (result.valid) {
-    message.success('复核意见已提交')
+  if (result.validation.valid) {
+    notify.success('复核意见已提交')
     reviewComment.value = ''
     showModifyForm.value = false
     resetModifyForm()
   } else {
-    message.error(result.message)
+    notify.error(result.validation.message)
   }
 }
 
@@ -164,25 +172,24 @@ function handleApplyOpinion(opinion: ReviewOpinion) {
   if (!opinion.proposedChanges) return
   const result = store.applyOpinionChanges(opinion.id)
   if (result.valid) {
-    message.success('修改建议已应用')
+    notify.success('修改建议已应用')
   } else {
-    message.error(result.message)
+    notify.error(result.message)
   }
 }
 
 function handleFinalize(regionId: string, regionName: string) {
-  dialog.warning({
-    title: '定稿确认',
-    content: `确定要将区域「${regionName}」标记为已定稿吗？定稿后表示复核完成。`,
-    positiveText: '确认定稿',
-    negativeText: '取消',
-    onPositiveClick: () => {
+  dialog.confirm(
+    '定稿确认',
+    `确定要将区域「${regionName}」标记为已定稿吗？定稿后表示复核完成。`,
+    () => {
       const result = store.finalizeRegion(regionId)
       if (result.valid) {
-        message.success('已标记为定稿')
+        notify.success('已标记为定稿')
       }
-    }
-  })
+    },
+    { positiveText: '确认定稿', negativeText: '取消', type: 'warning' }
+  )
 }
 
 function formatTime(ts: number): string {

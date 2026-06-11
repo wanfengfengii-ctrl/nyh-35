@@ -8,28 +8,37 @@ import {
   NBadge,
   NButton,
   NIcon,
-  NEllipsis,
-  useDialog,
-  useMessage
+  NEllipsis
 } from 'naive-ui'
 import {
   RegionCategoryLabel,
   RegionCategoryColor,
   RegionStatusLabel,
-  RegionStatus
+  RegionStatus,
+  RegionCategory
 } from '@/types'
+import { TagType, useNotify, useDialog } from '@/utils/common'
 
 const store = useMainStore()
 const dialog = useDialog()
-const message = useMessage()
+const notify = useNotify()
 
 const regions = computed(() => store.sortedRegions)
 
-const statusTagType: Record<RegionStatus, 'default' | 'info' | 'warning' | 'success'> = {
+const statusTagType: Record<RegionStatus, TagType> = {
   [RegionStatus.PENDING]: 'default',
   [RegionStatus.IN_PROGRESS]: 'info',
   [RegionStatus.REVIEWED]: 'warning',
   [RegionStatus.FINALIZED]: 'success'
+}
+
+const categoryTagType: Record<RegionCategory, TagType> = {
+  [RegionCategory.MAIN_TEXT]: 'info',
+  [RegionCategory.HEAD_NOTE]: 'success',
+  [RegionCategory.INTERLINE_NOTE]: 'warning',
+  [RegionCategory.IMAGE]: 'default',
+  [RegionCategory.TITLE_LABEL]: 'error',
+  [RegionCategory.DAMAGED]: 'warning'
 }
 
 function handleSelect(id: string) {
@@ -42,19 +51,18 @@ function handleDelete(id: string, name: string, ev: Event) {
   const doDelete = () => {
     const result = store.deleteRegion(id)
     if (result.valid) {
-      message.success('区域已删除')
+      notify.success('区域已删除')
     } else {
-      message.error(result.message)
+      notify.error(result.message)
     }
   }
   if (hasDesc) {
-    dialog.warning({
-      title: '二次确认',
-      content: `区域「${name}」已填写说明，确定要删除吗？此操作不可撤销。`,
-      positiveText: '确认删除',
-      negativeText: '取消',
-      onPositiveClick: doDelete
-    })
+    dialog.confirm(
+      '二次确认',
+      `区域「${name}」已填写说明，确定要删除吗？此操作不可撤销。`,
+      doDelete,
+      { positiveText: '确认删除', negativeText: '取消', type: 'warning' }
+    )
   } else {
     doDelete()
   }
@@ -99,7 +107,7 @@ function toggleHidden(id: string, ev: Event) {
               <NText strong>{{ r.name }}</NText>
               <NTag
                 size="small"
-                :color="RegionCategoryColor[r.category]"
+                :type="categoryTagType[r.category]"
                 round
                 v-if="!r.hidden"
               >

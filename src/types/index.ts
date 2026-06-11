@@ -532,6 +532,7 @@ export interface BookProgress {
   overdueIssues: number
   alignmentAverageConfidence: number
   progressPercentage: number
+  overallProgress: number
   estimatedCompletionDate: number | null
 }
 
